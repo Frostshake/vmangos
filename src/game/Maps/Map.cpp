@@ -86,7 +86,7 @@ Map::~Map()
 
 GenericTransport* Map::GetTransport(ObjectGuid guid)
 {
-    if (Transport* transport = HashMapHolder<Transport>::Find(guid))
+    if (ShipTransport* transport = HashMapHolder<ShipTransport>::Find(guid))
         return transport;
 
     if (guid.GetEntry())
@@ -111,7 +111,7 @@ ElevatorTransport* Map::GetElevatorTransport(ObjectGuid guid)
 
 void Map::LoadMapAndVMap(int gx, int gy)
 {
-    if (m_bLoadedGrids[gx][gx])
+    if (m_bLoadedGrids[gx][gy])
         return;
 
     GridMap * pInfo = m_terrainData->Load(gx, gy);
@@ -161,17 +161,18 @@ Map::Map(uint32 id, time_t expiry, uint32 InstanceId)
         int numObjThreads = (int)sWorld.getConfig(CONFIG_UINT32_MAP_OBJECTSUPDATE_THREADS);
         if (numObjThreads > 1)
         {
-            m_objectThreads.reset(new ThreadPool(numObjThreads -1));
+            m_objectThreads.reset(new ThreadPool("MapObj", numObjThreads -1));
             m_objectThreads->start<ThreadPool::MySQL<ThreadPool::MultiQueue>>();
         }
-        m_motionThreads.reset(new ThreadPool(sWorld.getConfig(CONFIG_UINT32_CONTINENTS_MOTIONUPDATE_THREADS)));
-        m_visibilityThreads.reset(new ThreadPool(std::max((int)sWorld.getConfig(CONFIG_UINT32_MAP_VISIBILITYUPDATE_THREADS) -1,0)));
-        m_cellThreads.reset(new ThreadPool(std::max((int)sWorld.getConfig(CONFIG_UINT32_MTCELLS_THREADS) - 1, 0)));
+        m_motionThreads.reset(new ThreadPool("MapMotion", sWorld.getConfig(CONFIG_UINT32_CONTINENTS_MOTIONUPDATE_THREADS)));
+        m_visibilityThreads.reset(new ThreadPool("MapVis", std::max((int)sWorld.getConfig(CONFIG_UINT32_MAP_VISIBILITYUPDATE_THREADS) -1,0)));
+        m_cellThreads.reset(new ThreadPool("MapCell", std::max((int)sWorld.getConfig(CONFIG_UINT32_MTCELLS_THREADS) - 1, 0)));
         m_visibilityThreads->start<ThreadPool::MySQL<ThreadPool::MultiQueue>>();
         m_cellThreads->start();
         m_motionThreads->start();
     }
 
+    sTransportMgr.SpawnTransportsOnMap(this);
     LoadElevatorTransports();
 }
 
@@ -368,7 +369,6 @@ bool Map::EnsureGridLoaded(Cell const& cell)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[Map%u][CRASH] Grid [%u:%u] NOT loaded !!", m_id, cell.GridX(), cell.GridY());
         throw new std::string("Crash AT EnsureGridLoaded");
-        ASSERT(false);
     }
 
     if (!grid->isGridObjectDataLoaded())
@@ -446,8 +446,14 @@ bool Map::Add(Player* player)
     sAuraRemovalMgr.PlayerEnterMap(m_id, player);
 
     player->SetSplineDonePending(false);
-    player->GetSession()->ClearIncomingPacketsByType(PACKET_PROCESS_MOVEMENT);
-    player->m_broadcaster->SetInstanceId(GetInstanceId());
+
+    // don't clear movement packets during login or we might discard CMSG_SET_ACTIVE_MOVER
+    if (!player->GetSession()->PlayerLoading())
+        player->GetSession()->ClearIncomingPacketsByType(PACKET_PROCESS_MOVEMENT);
+
+    if (player->m_broadcaster)
+        player->m_broadcaster->SetInstanceId(GetInstanceId());
+
     return true;
 }
 
@@ -456,7 +462,8 @@ void Map::ExistingPlayerLogin(Player* player)
     // Reset visibility list
     for (ObjectGuidSet::const_iterator it = player->m_visibleGUIDs.begin(); it != player->m_visibleGUIDs.end(); ++it)
         if (Player* other = GetPlayer(*it))
-            other->m_broadcaster->RemoveListener(player);
+            if (other->m_broadcaster)
+                other->m_broadcaster->RemoveListener(player);
     player->m_visibleGUIDs.clear();
 
     SendInitTransports(player);
@@ -489,7 +496,7 @@ Map::Add(T* obj)
     obj->SetMap(this);
 
     Cell cell(p);
-    if (obj->isActiveObject() && !IsUnloading())
+    if (obj->IsActiveObject() && !IsUnloading())
         EnsureGridLoadedAtEnter(cell);
     else
         EnsureGridCreated(GridPair(cell.GridX(), cell.GridY()));
@@ -500,7 +507,7 @@ Map::Add(T* obj)
     AddToGrid(obj, grid, cell);
     obj->AddToWorld();
 
-    if (obj->isActiveObject() && !IsUnloading())
+    if (obj->IsActiveObject() && !IsUnloading())
         AddToActive(obj);
 
     sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "%s enters grid[%u,%u]", obj->GetObjectGuid().GetString().c_str(), cell.GridX(), cell.GridY());
@@ -546,7 +553,7 @@ void Map::Add(GenericTransport* obj)
 }
 
 template<>
-void Map::Add(Transport* obj)
+void Map::Add(ShipTransport* obj)
 {
     Add<GenericTransport>(obj);
 }
@@ -569,7 +576,7 @@ void Map::LoadElevatorTransports()
             continue;
         }
 
-        GameObjectInfo const* pInfo = sObjectMgr.GetGameObjectInfo(pData->id);
+        GameObjectInfo const* pInfo = sObjectMgr.GetGameObjectTemplate(pData->id);
         if (!pInfo)
         {
             sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[Map::LoadElevatorTransports] Missing gameobject template %u for guid %u!", pData->id, itr->second);
@@ -1090,7 +1097,7 @@ ScriptedEvent* Map::StartScriptedEvent(uint32 id, WorldObject* source, WorldObje
 {
     if (m_mScriptedEvents.find(id) != m_mScriptedEvents.end())
         return nullptr;
-    
+
     auto itr = m_mScriptedEvents.emplace(std::piecewise_construct, std::forward_as_tuple(id), std::forward_as_tuple(id, source ? source->GetObjectGuid() : ObjectGuid(), target ? target->GetObjectGuid() : ObjectGuid(), *this, time_t(sWorld.GetGameTime() + timelimit), failureCondition, failureScript, successCondition, successScript));
 
     return &itr.first->second;
@@ -1266,7 +1273,8 @@ void Map::Remove(Player* player, bool remove)
 
     for (ObjectGuidSet::const_iterator it = player->m_visibleGUIDs.begin(); it != player->m_visibleGUIDs.end(); ++it)
         if (Player* other = GetPlayer(*it))
-            other->m_broadcaster->RemoveListener(player);
+            if (other->m_broadcaster)
+                other->m_broadcaster->RemoveListener(player);
 
     player->ResetMap();
     if (remove)
@@ -1295,7 +1303,7 @@ Map::Remove(T* obj, bool remove)
     m_mCreatureSummonCount.erase(obj->GetGUID());
     m_mCreatureSummonLimit.erase(obj->GetGUID());
 
-    if (obj->isActiveObject())
+    if (obj->IsActiveObject())
         RemoveFromActive(obj);
 
     if (remove)
@@ -1313,7 +1321,7 @@ Map::Remove(T* obj, bool remove)
             obj->SaveRespawnTime(); // requires map not being reset
 
     obj->ResetMap();
-    
+
     if (remove) // Note: In case resurrectable corpse and pet its removed from global lists in own destructor
         delete obj;
 }
@@ -1321,7 +1329,7 @@ Map::Remove(T* obj, bool remove)
 template<>
 void Map::Remove(GenericTransport* obj, bool remove)
 {
-    if (obj->isActiveObject())
+    if (obj->IsActiveObject())
         RemoveFromActive(obj);
     if (remove)
         obj->CleanupsBeforeDelete();
@@ -1355,7 +1363,7 @@ void Map::Remove(GenericTransport* obj, bool remove)
 }
 
 template<>
-void Map::Remove(Transport* obj, bool remove)
+void Map::Remove(ShipTransport* obj, bool remove)
 {
     Remove<GenericTransport>(obj, remove);
 }
@@ -1479,7 +1487,7 @@ bool Map::CreatureCellRelocation(Creature* c, Cell const& new_cell)
     Cell const& old_cell = c->GetCurrentCell();
     if (old_cell.DiffGrid(new_cell))
     {
-        if ((!c->isActiveObject() || IsUnloading()) && !loaded(new_cell.gridPair()))
+        if ((!c->IsActiveObject() || IsUnloading()) && !loaded(new_cell.gridPair()))
         {
             DEBUG_FILTER_LOG(LOG_FILTER_CREATURE_MOVES, "Creature (GUID: %u Entry: %u) attempt move from grid[%u,%u]cell[%u,%u] to unloaded grid[%u,%u]cell[%u,%u].", c->GetGUIDLow(), c->GetEntry(), old_cell.GridX(), old_cell.GridY(), old_cell.CellX(), old_cell.CellY(), new_cell.GridX(), new_cell.GridY(), new_cell.CellX(), new_cell.CellY());
             return false;
@@ -1644,9 +1652,8 @@ void Map::UpdateActiveObjectVisibility(Player* player)
     // Params for compressed data set - will only be compressed if packet size > 100 (multiple units)
     ObjectGuidSet guids;
     UpdateData data;
-    std::set<WorldObject*> visibleNow;
 
-    UpdateActiveObjectVisibility(player, guids, data, visibleNow);
+    UpdateActiveObjectVisibility(player, guids, data);
 
     if (data.HasData())
         data.Send(player->GetSession());
@@ -1666,14 +1673,14 @@ void Map::UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGui
 }
 
 // Support for compressed data packet
-void Map::UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGuids, UpdateData& data, std::set<WorldObject*>& visibleNow)
+void Map::UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGuids, UpdateData& data)
 {
     for (const auto obj : m_activeNonPlayers)
     {
         if (obj->IsInWorld())
         {
             // TODO: Why is this templated? Why not just base class WorldObject for the target...?
-            player->UpdateVisibilityOf(player->GetCamera().GetBody(), obj, data, visibleNow);
+            player->UpdateVisibilityOf(player->GetCamera().GetBody(), obj, data);
             visibleGuids.erase(obj->GetObjectGuid());
         }
     }
@@ -1827,6 +1834,14 @@ uint32 Map::GetPlayersCountExceptGMs() const
     return count;
 }
 
+void Map::SendToPlayers(std::unique_ptr<ServerPacket const> packet, Team team) const
+{
+    // TODO Use broadcaster which does the binary conversion automatically
+    WorldPacket data(packet->GetOpcode());
+    packet->AppendBodyTo(data);
+    SendToPlayers(&data, team);
+}
+
 void Map::SendToPlayers(WorldPacket const* data, Team team) const
 {
     for (const auto& itr : m_mapRefManager)
@@ -1857,7 +1872,7 @@ void Map::SendDefenseMessage(int32 textId, uint32 zoneId) const
     {
         Player* pPlayer = itr.getSource();
         char const* text = textId > 0 ? sObjectMgr.GetBroadcastText(textId, pPlayer->GetSession()->GetSessionDbLocaleIndex(), pPlayer->GetGender()) : sObjectMgr.GetMangosString(textId, pPlayer->GetSession()->GetSessionDbLocaleIndex());
-        
+
         WorldPacket data(SMSG_DEFENSE_MESSAGE);
         data << uint32(zoneId);
         data << uint32(strlen(text) + 1);
@@ -2124,13 +2139,13 @@ bool DungeonMap::CanEnter(Player* player)
 
     if (m_resetAfterUnload)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[DungeonReset] %s attempted to enter map %u, instance %u during reset", player->GetName(), m_instanceId);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[DungeonReset] %s attempted to enter map %u, instance %u during reset", player->GetName(), GetId(), m_instanceId);
         player->SendTransferAborted(TRANSFER_ABORT_NOT_FOUND);
         return false;
     }
 
     // World of Warcraft Client Patch 1.11.0 (2006-06-20)
-    // - Instituted an anti-exploit measure on certain encounters (almost 
+    // - Instituted an anti-exploit measure on certain encounters (almost
     //   entirely raid bosses).These encounters will prevent people from
     //   zoning into the instance while that encounter is engaged.If you
     //   attempt to zone into the instance while that encounter is engaged,
@@ -2141,7 +2156,7 @@ bool DungeonMap::CanEnter(Player* player)
     //   graveyard rushing in instances.
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
     Group* pGroup = player->GetGroup();
-    if (IsRaid() && GetInstanceData() && GetInstanceData()->IsEncounterInProgress() && 
+    if (IsRaid() && GetInstanceData() && GetInstanceData()->IsEncounterInProgress() &&
         pGroup && pGroup->InCombatToInstance(GetInstanceId()) && player->IsAlive() && !player->IsGameMaster())
     {
         player->SendTransferAborted(TRANSFER_ABORT_ZONE_IN_COMBAT);
@@ -2513,7 +2528,7 @@ void Map::ScriptsStart(ScriptMapMap const& scripts, uint32 id, ObjectGuid source
     // Schedule script execution for all scripts in the script map
     ScriptMap const* s2 = &(s->second);
     bool immedScript = false;
-    
+
     std::lock_guard<MapMutexType> lock(m_scriptSchedule_lock);
     for (ScriptMap::const_iterator iter = s2->begin(); iter != s2->end(); ++iter)
     {
@@ -2546,8 +2561,8 @@ void Map::ScriptCommandStart(ScriptInfo const& script, uint32 delay, ObjectGuid 
 
 bool Map::ScriptCommandStartDirect(ScriptInfo const& script, WorldObject* source, WorldObject* target)
 {
-    if ((script.command != SCRIPT_COMMAND_DISABLED) && 
-        FindScriptFinalTargets(source, target, script) && 
+    if ((script.command != SCRIPT_COMMAND_DISABLED) &&
+        FindScriptFinalTargets(source, target, script) &&
         (!script.condition || IsConditionSatisfied(script.condition, target, this, source, CONDITION_FROM_DBSCRIPTS)))
         return (this->*(m_ScriptCommands[script.command]))(script, source, target);
 
@@ -2585,7 +2600,9 @@ bool Map::FindScriptFinalTargets(WorldObject*& source, WorldObject*& target, Scr
     // If we have a buddy lets find it.
     if (script.target_type)
     {
-        if (!(target = GetTargetByType(source, target, this, script.target_type, script.target_param1, script.target_param2)))
+        // Cast Spell scripts include spellinfo in target finding
+        SpellEntry const* pSpellInfo = (script.command == SCRIPT_COMMAND_CAST_SPELL) ? sSpellMgr.GetSpellEntry(script.castSpell.spellId) : nullptr;
+        if (!(target = GetTargetByType(source, target, this, script.target_type, script.target_param1, script.target_param2, pSpellInfo)))
         {
             if (!(script.raw.data[4] & SF_GENERAL_SKIP_MISSING_TARGETS))
                 sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "FindScriptTargets: Failed to find target for script with id %u (target_param1: %u), (target_param2: %u), (target_type: %u).", script.id, script.target_param1, script.target_param2, script.target_type);
@@ -2665,6 +2682,29 @@ void Map::ScriptsProcess()
 
         iter = m_scriptSchedule.begin();
     }
+}
+
+void Map::StartAreaTriggerScript(AreaTriggerEntry const* pTrigger, Player* pPlayer)
+{
+    if (pTrigger->condition_id && !IsConditionSatisfied(pTrigger->condition_id, pPlayer, pPlayer->GetMap(), pPlayer, CONDITION_FROM_AREATRIGGER))
+        return;
+
+    if (pTrigger->cooldown)
+    {
+        time_t& currentCooldownTime = m_areaTriggerCooldowns[pTrigger->id];
+        if (currentCooldownTime > sWorld.GetGameTime())
+            return;
+
+        currentCooldownTime = sWorld.GetGameTime() + pTrigger->cooldown;
+    }
+
+    // call c++ script if any
+    if (sScriptMgr.OnAreaTrigger(pPlayer, pTrigger))
+        return;
+
+    // call db script if any
+    if (pTrigger->script_id)
+        ScriptsStart(sAreaTriggerScripts, pTrigger->script_id, pPlayer->GetObjectGuid(), pPlayer->GetObjectGuid());
 }
 
 /**
@@ -2856,8 +2896,8 @@ void Map::SendObjectUpdates()
     if (threads < m_objUpdatesThreads)
         m_objUpdatesThreads = threads;
 #endif
-    if (threads > objectsCount)
-        threads = objectsCount;
+    if (static_cast<uint32>(threads) > objectsCount)
+        threads = static_cast<int>(objectsCount);
     int step = objectsCount / threads;
 
     ASSERT(step > 0);
@@ -2971,7 +3011,7 @@ void Map::UpdateVisibilityForRelocations()
     if (threads > objectsCount)
         threads = objectsCount;
     uint32 step = objectsCount / threads;
-    
+
     ASSERT(step > 0);
 
     std::vector<std::unordered_set<Unit*>::iterator> t;
@@ -3194,11 +3234,16 @@ bool Map::GetWalkHitPosition(GenericTransport* transport, float srcX, float srcY
         return false;
     }
 
+    if (t == 0)
+    {
+        return false;
+    }
+
     // We hit a wall - calculate new endposition
     if ((t < 1) && (t > 0))
     {
         for (int i = 0; i < 3; ++i)
-            endPosition[i] = point[i] + (endPosition[i] - point[i]) * hitNormal[i];
+            endPosition[i] = point[i] + (endPosition[i] - point[i]) * t;
     }
 
     if (dtStatusFailed(navMeshQuery->closestPointOnPoly(visited[visitedCount - 1], endPosition, endPosition, nullptr)))
@@ -3377,8 +3422,13 @@ GameObjectModel const* Map::FindDynamicObjectCollisionModel(float x1, float y1, 
     ASSERT(MaNGOS::IsValidMapCoord(x2, y2, z2));
     Vector3 const pos1 = Vector3(x1, y1, z1);
     Vector3 const pos2 = Vector3(x2, y2, z2);
-    std::shared_lock<std::shared_timed_mutex> lock(m_dynamicTreeLock);
-    return m_dynamicTree.getObjectHit(pos1, pos2);
+    GameObjectModel const* result = nullptr;
+    if (pos1 != pos2)
+    {
+        std::shared_lock<std::shared_timed_mutex> lock(m_dynamicTreeLock);
+        result = m_dynamicTree.getObjectHit(pos1, pos2);
+    }
+    return result;
 }
 
 void Map::RemoveGameObjectModel(const GameObjectModel &model)
@@ -3448,8 +3498,7 @@ void Map::CrashUnload()
 
 
             // Go back to character selection
-            WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
-            session->SendPacket(&data);
+            session->SendPacket(std::make_unique<WorldPackets::Misc::LogoutComplete>());
             session->LogoutPlayer(false);
         }
     }
@@ -3604,6 +3653,7 @@ void Map::RemoveCorpses(bool unload)
             // add bones in grid store if grid loaded where corpse placed
             Add(bones);
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
             if (looterGuid)
             {
                 // Now we must make bones lootable, and send player loot
@@ -3615,6 +3665,7 @@ void Map::RemoveCorpses(bool unload)
                     looter->SendLoot(bones->GetObjectGuid(), LOOT_INSIGNIA, owner);
                 }
             }
+#endif
 
             // Only take the lock for a second
             {
@@ -3665,7 +3716,7 @@ void Map::RemoveOldBones(uint32 const diff)
 
 GameObject* Map::SummonGameObject(uint32 entry, float x, float y, float z, float ang, float rotation0, float rotation1, float rotation2, float rotation3, uint32 respawnTime, uint32 worldMask)
 {
-    GameObjectInfo const* goinfo = sObjectMgr.GetGameObjectInfo(entry);
+    GameObjectInfo const* goinfo = sObjectMgr.GetGameObjectTemplate(entry);
     if (!goinfo)
     {
         sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Gameobject template %u not found in database!", entry);
@@ -3718,7 +3769,7 @@ Creature* Map::LoadCreatureSpawn(uint32 dbGuid, bool delaySpawn)
         if (sWorld.getConfig(CONFIG_BOOL_SAVE_RESPAWN_TIME_IMMEDIATELY) || pCreature->IsWorldBoss())
             pCreature->SaveRespawnTime();
     }
-    
+
     Add(pCreature);
     return pCreature;
 }
@@ -3766,7 +3817,7 @@ GameObject* Map::LoadGameObjectSpawn(uint32 dbGuid, bool delaySpawn)
         delete pGameObject;
         return nullptr;
     }
-    
+
     if (delaySpawn)
     {
         pGameObject->SetRespawnTime(pGameObject->GetRespawnDelay());

@@ -166,7 +166,7 @@ ModelInstance::ModelInstance(MPQFile& f, const char* ModelInstName, uint32 mapID
     sc = scale / 1024.0f;
 
     char tempname[512];
-    sprintf(tempname, "%s/%s", szWorkDirWmo, ModelInstName);
+    snprintf(tempname, sizeof(tempname), "%s/%s", szWorkDirWmo, ModelInstName);
 
     FILE* input = fopen(tempname, "r+b");
     if (!input)
@@ -239,10 +239,10 @@ void Doodad::ExtractSet(WMODoodadData const& doodadData, ADT::MODF const& wmo, u
         WMO::MODD const& doodad = doodadData.Spawns[doodadIndex];
 
         char ModelInstName[1024];
-        sprintf(ModelInstName, "%s", GetPlainName(&doodadData.Paths[doodad.NameIndex]));
+        snprintf(ModelInstName, sizeof(ModelInstName), "%s", GetPlainName(&doodadData.Paths[doodad.NameIndex]));
         uint32 nlen = strlen(ModelInstName);
-        fixnamen(ModelInstName, nlen);
-        fixname2(ModelInstName, nlen);
+        FixNameCase(ModelInstName, nlen);
+        FixNameSpaces(ModelInstName, nlen);
         if (nlen > 3)
         {
             char const* extension = &ModelInstName[nlen - 4];
@@ -253,9 +253,8 @@ void Doodad::ExtractSet(WMODoodadData const& doodadData, ADT::MODF const& wmo, u
             }
         }
 
-        char tempname[1036];
-        sprintf(tempname, "%s/%s", szWorkDirWmo, ModelInstName);
-        FILE* input = fopen(tempname, "r+b");
+        std::string tempname = std::string(szWorkDirWmo) + "/" + ModelInstName;
+        FILE* input = fopen(tempname.c_str(), "r+b");
         if (!input)
             continue;
 

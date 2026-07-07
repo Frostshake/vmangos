@@ -30,6 +30,7 @@
 #include "Group.h"
 #include "SpellAuraDefines.h"
 #include "Map.h"
+#include "Utilities/Random.h"
 
 int PetAI::Permissible(Creature const* creature)
 {
@@ -58,7 +59,8 @@ PetAI::PetAI(Creature* c) : CreatureAI(c), m_updateAlliesTimer(0)
 bool PetAI::_needToStop() const
 {
     // This is needed for charmed creatures, as once their target was reset other effects can trigger threat
-    if (m_creature->IsCharmed() && m_creature->GetVictim() == m_creature->GetCharmer())
+    if (m_creature->IsCharmed() && m_creature->GetVictim() &&
+        m_creature->GetVictim()->GetObjectGuid() == m_creature->GetCharmerGuid())
         return true;
 
     // Stop attacking when player is mounted
@@ -211,7 +213,7 @@ void PetAI::UpdateAI(uint32 const diff)
                 continue;
 
             // check spell cooldown
-            if (!m_creature->IsSpellReady(spellInfo->Id))
+            if (!m_creature->IsSpellReady(spellInfo))
                 continue;
 
             if (spellInfo->IsPositiveSpell())
@@ -330,7 +332,7 @@ void PetAI::UpdateAI(uint32 const diff)
 
             // 10% chance to play special pet attack talk, else growl
             // actually this only seems to happen on special spells, fire shield for imp, torment for voidwalker, but it's stupid to check every spell
-            if (((Creature*)m_creature)->IsPet() && (((Pet*)m_creature)->getPetType() == SUMMON_PET) && (m_creature != target) && (urand(0, 100) < 10))
+            if (((Creature*)m_creature)->IsPet() && (((Pet*)m_creature)->GetPetType() == SUMMON_PET) && (m_creature != target) && (urand(0, 100) < 10))
                 m_creature->SendPetTalk((uint32)PET_TALK_SPECIAL_SPELL);
             else
                 m_creature->SendPetAIReaction();
@@ -365,12 +367,16 @@ void PetAI::UpdateAllies()
         return;
 
     //owner is in group; group members filled in already (no raid -> subgroupcount = whole count)
-    if (group && !group->isRaidGroup() && m_AllySet.size() == (group->GetMembersCount() + 2))
+    if (group && !group->isRaidGroup() && m_AllySet.size() == (group->GetMembersCount() + 1))
         return;
 
+    // Cache potential friendly targets here. Charmed owner/group members are
+    // filtered later by spell target validation before the pet actually casts.
     m_AllySet.clear();
     m_AllySet.insert(m_creature->GetObjectGuid());
-    if (group)                                             //add group
+    m_AllySet.insert(owner->GetObjectGuid()); // The pet owner must always be included.
+
+    if (group)
     {
         for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
@@ -384,8 +390,6 @@ void PetAI::UpdateAllies()
             m_AllySet.insert(target->GetObjectGuid());
         }
     }
-    else                                                    //remove group
-        m_AllySet.insert(owner->GetObjectGuid());
 }
 
 void PetAI::KilledUnit(Unit* victim)
@@ -522,7 +526,7 @@ std::pair<Unit*, ePetSelectTargetReason> PetAI::SelectNextTarget() const
     Unit* owner = m_creature->GetCharmerOrOwner();
     if (!owner)
         return std::make_pair(nullptr, PSTR_FAIL_NO_OWNER);
-    
+
     if (Creature const* pOwnerCreature = owner->ToCreature())
     {
         // Owner is creature and is evading. We must not re-aggro.
@@ -551,7 +555,7 @@ std::pair<Unit*, ePetSelectTargetReason> PetAI::SelectNextTarget() const
     {
         if (Unit* pVictim = owner->GetVictim())
         {
-            if (!pVictim->HasAuraPetShouldAvoidBreaking() && 
+            if (!pVictim->HasAuraPetShouldAvoidBreaking() &&
                (!m_creature->GetCharmInfo()->IsAtStay() || m_creature->CanReachWithMeleeAutoAttack(pVictim)))
                 return std::make_pair(pVictim, PSTR_SUCCESS_OWNER_VICTIM);
         }
@@ -726,7 +730,7 @@ bool PetAI::CanAttack(Unit* target)
     // CC - mobs under crowd control can be attacked if owner commanded
     if (target->HasAuraPetShouldAvoidBreaking())
         return m_creature->GetCharmInfo()->IsCommandAttack();
-        
+
     // Returning - pets ignore attacks only if owner clicked follow
     if (m_creature->GetCharmInfo()->IsReturning())
         return !m_creature->GetCharmInfo()->IsCommandFollow();
@@ -800,4 +804,3 @@ void PetAI::AttackedBy(Unit* attacker)
     // Continue to evaluate and attack if necessary
     AttackStart(attacker);
 }
-

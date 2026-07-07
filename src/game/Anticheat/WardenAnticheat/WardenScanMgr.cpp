@@ -28,9 +28,13 @@
 #include "Policies/SingletonImp.h"
 #include "Database/DatabaseEnv.h"
 #include "World.h"
+#include "Log.h"
 
 #include <vector>
 #include <algorithm>
+#include <random>
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
 
 INSTANTIATE_SINGLETON_1(WardenScanMgr);
 
@@ -45,7 +49,7 @@ bool BuildRawData(std::string const& hexData, std::vector<uint8>& out)
 
     out.resize(hexData.length() / 2);
 
-    for (auto i = 0; i < out.size(); ++i)
+    for (size_t i = 0; i < out.size(); ++i)
     {
         auto const byte = curr.substr(0, 2);
         curr = curr.substr(2);
@@ -318,7 +322,9 @@ std::vector<std::shared_ptr<Scan const>> WardenScanMgr::GetRandomScans(ScanFlags
     }
 
     // randomize the order of matching scans
-    std::random_shuffle(matches.begin(), matches.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(matches.begin(), matches.end(), g);
 
     // determine how many of the identified scans we can fit into the client's request and response buffers
     size_t request = 0, reply = 0;
@@ -342,5 +348,7 @@ std::vector<std::shared_ptr<Scan const>> WardenScanMgr::GetRandomScans(ScanFlags
         reply += scan->replySize;
     }
 
-    return std::move(matches);
+    return matches;
 }
+
+#endif

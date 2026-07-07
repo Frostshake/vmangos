@@ -31,6 +31,7 @@
 #include "DBCStores.h"
 #include "SQLStorages.h"
 #include "SpellEntry.h"
+#include "Errors.h"
 
 #include <map>
 #include <memory>
@@ -94,11 +95,14 @@ struct SpellThreatEntry
 {
     uint16 threat;
     float multiplier;
-    float ap_bonus;
+    uint8 inverseEffectMask;
+
+    bool CanCauseThreatOnMask(uint8 mask) const { return ((~inverseEffectMask) & mask) != 0; }
 };
 
 typedef std::map<uint32, uint8> SpellElixirMap;
 typedef std::map<uint32, uint32> SpellEnchantChargesMap;
+typedef std::map<uint32, float> SpellConeMap;
 typedef std::map<uint32, float> SpellProcItemEnchantMap;
 typedef std::map<uint32, SpellThreatEntry> SpellThreatMap;
 
@@ -107,10 +111,11 @@ enum SpellTargetType
 {
     SPELL_TARGET_TYPE_GAMEOBJECT = 0,
     SPELL_TARGET_TYPE_CREATURE   = 1,
-    SPELL_TARGET_TYPE_DEAD       = 2
+    SPELL_TARGET_TYPE_DEAD       = 2,
+    SPELL_TARGET_TYPE_PLAYER     = 3
 };
 
-#define MAX_SPELL_TARGET_TYPE 3
+#define MAX_SPELL_TARGET_TYPE 4
 
 struct SpellTargetEntry
 {
@@ -417,6 +422,15 @@ class SpellMgr
                 return SPELL_NORMAL;
         }
 
+        float GetSpellCone(uint32 spellid) const
+        {
+            auto itr = mSpellCones.find(spellid);
+            if (itr == mSpellCones.end())
+                return (60.0f * M_PI_F / 180.0f);
+
+            return itr->second;
+        }
+
         uint32 GetSpellEnchantCharges(uint32 spellid) const
         {
             auto itr = mSpellEnchantChargesMap.find(spellid);
@@ -671,6 +685,7 @@ class SpellMgr
         void CheckUsedSpells(char const* table);
 
         // Loading data at server startup
+        void LoadSpellCones();
         void LoadSpellChains();
         void LoadSpellEnchantCharges();
         void LoadSpellLearnSkills();
@@ -693,6 +708,7 @@ class SpellMgr
 
         // SpellEntry
         void LoadSpells();
+        void LoadSpell(Field* fields);
         void AssignInternalSpellFlags();
         SpellEntry const* GetSpellEntry(uint32 spellId) const { return spellId < GetMaxSpellId() ? mSpellEntryMap[spellId].get() : nullptr; }
         uint32 GetMaxSpellId() const { return mSpellEntryMap.size(); }
@@ -717,6 +733,7 @@ class SpellMgr
 
     private:
         SpellScriptTarget  mSpellScriptTarget;
+        SpellConeMap       mSpellCones;
         SpellChainMap      mSpellChains;
         SpellChainMapNext  mSpellChainsNext;
         SpellLearnSkillMap mSpellLearnSkills;

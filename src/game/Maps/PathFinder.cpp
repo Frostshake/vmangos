@@ -164,7 +164,7 @@ void PathInfo::BuildPolyPath(Vector3 const& startPos, Vector3 const& endPos)
     float startPoint[VERTEX_SIZE] = {startPos.y, startPos.z, startPos.x};
     float endPoint[VERTEX_SIZE] = {endPos.y, endPos.z, endPos.x};
 
-    bool const canSwimToDestination = m_sourceUnit->CanSwim() &&
+    bool const canSwimToDestination = m_sourceUnit->CanSwim() && (!m_sourceUnit->IsCreature() || m_sourceUnit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_USE_SWIM_ANIMATION)) &&
                                       m_sourceUnit->CanSwimAtPosition(startPos) &&
                                       m_sourceUnit->CanSwimAtPosition(endPos);
 
@@ -305,11 +305,20 @@ void PathInfo::BuildPolyPath(Vector3 const& startPos, Vector3 const& endPos)
         {
             // we can hit offmesh connection as last poly - closestPointOnPoly() don't like that
             // try to recover by using prev polyref
-            --prefixPolyLength;
-            suffixStartPoly = m_pathPolyRefs[prefixPolyLength - 1];
-            if (dtStatusFailed(m_navMeshQuery->closestPointOnPoly(suffixStartPoly, endPoint, suffixEndPoint, &PosOverBody)))
+            if (prefixPolyLength > 1) // Prevent out-of-bounds access
             {
-                // suffixStartPoly is still invalid, error state
+                --prefixPolyLength;
+                suffixStartPoly = m_pathPolyRefs[prefixPolyLength - 1];
+                if (dtStatusFailed(m_navMeshQuery->closestPointOnPoly(suffixStartPoly, endPoint, suffixEndPoint, &PosOverBody)))
+                {
+                    // suffixStartPoly is still invalid, error state
+                    BuildShortcut();
+                    m_type = PATHFIND_NOPATH;
+                    return;
+                }
+            }
+            else
+            {
                 BuildShortcut();
                 m_type = PATHFIND_NOPATH;
                 return;
@@ -558,7 +567,7 @@ bool BuildPathStep(Vector3 const& currentPos, Vector3 const& targetPos, Map cons
     for (int i = 0; i < 12; i++)
     {
         Vector3 newPos;
-        Geometry::GetNearPoint2DAroundPosition(currentPos.x, currentPos.y, newPos.x, newPos.y, STEP_SIZE, Geometry::ClampOrientation(angle + ORIENTATION_OFFSETS[i]));
+        Geometry::GetNearPoint2DAroundPosition(currentPos.x, currentPos.y, newPos.x, newPos.y, STEP_SIZE, Geometry::NormalizeOrientation(angle + ORIENTATION_OFFSETS[i]));
         newPos.z = pMap->GetHeight(newPos.x, newPos.y, currentPos.z + 0.1f, true);
 
         float const zdiff = newPos.z - currentPos.z;
@@ -1100,12 +1109,20 @@ void PathInfo::CutPathWithDynamicLoS()
     Vector3 out;
     // We have always keep at least 2 points (else, there is no mvt !)
     for (uint32 i = 1; i <= maxIndex; ++i)
-        if (m_sourceUnit->GetMap()->GetDynamicObjectHitPos(m_pathPoints[i - 1], m_pathPoints[i], out, -0.1f))
+    {
+        Vector3 start = m_pathPoints[i - 1];
+        Vector3 end = m_pathPoints[i];
+        start.z += 1.0f;
+        end.z += 1.0f;
+
+        if (m_sourceUnit->GetMap()->GetDynamicObjectHitPos(start, end, out, -0.1f))
         {
+            out.z -= 1.0f;
             m_pathPoints[i] = out;
             m_pathPoints.resize(i + 1);
             break;
         }
+    }
 }
 
 float PathInfo::Length() const

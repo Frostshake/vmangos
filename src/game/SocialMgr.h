@@ -150,9 +150,8 @@ class SocialMgr
 
         void GetFriendInfo(MasterPlayer* player, uint32 friendGUID, FriendInfo &friendInfo);
         // Packet management
-        void MakeFriendStatusPacket(FriendsResult result, uint32 friend_guid, WorldPacket* data);
         void SendFriendStatus(MasterPlayer* player, FriendsResult result, ObjectGuid friend_guid, bool broadcast);
-        void BroadcastToFriendListers(MasterPlayer* player, WorldPacket* packet);
+        void BroadcastToFriendListers(MasterPlayer const* player, WorldPacket const* packet);
         // Loading
         PlayerSocial* LoadFromDB(std::unique_ptr<QueryResult> result, ObjectGuid guid);
     private:

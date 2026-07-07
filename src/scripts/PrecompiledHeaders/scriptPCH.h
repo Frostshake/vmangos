@@ -26,10 +26,10 @@
 #include "SpellAuras.h"
 #include "TemporarySummon.h"
 #include "NullCreatureAI.h"
-#include "Chat.h"
 #include "BattleGroundAV.h"
 #include "World.h"
 #include "Weather.h"
 #include "TotemAI.h"
+#include "Utilities/Random.h"
 
 #endif

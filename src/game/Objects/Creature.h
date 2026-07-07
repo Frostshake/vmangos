@@ -39,7 +39,6 @@ class Quest;
 class Player;
 class WorldSession;
 class CreatureGroup;
-
 struct GameEventCreatureData;
 
 struct CreatureCreatePos
@@ -183,6 +182,14 @@ class Creature : public Unit
         bool IsImmuneToDamage(SpellSchoolMask meleeSchoolMask, SpellEntry const* spellInfo = nullptr) const override;
         bool IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex index, bool castOnSelf) const override;
 
+        bool IsPlusMob() const
+        {
+            if (IsPet())
+                return false;
+
+            return GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL;
+        }
+
         bool IsElite() const
         {
             if (IsPet())
@@ -226,8 +233,9 @@ class Creature : public Unit
         bool HasSpell(uint32 spellId) const override;
 
         void LockOutSpells(SpellSchoolMask schoolMask, uint32 duration) final;
-        void AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0) final;
+        void AddCooldown(SpellEntry const* spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0) final;
         void StartCooldownForSummoner();
+        void CancelSummonPossessedCharm();
         bool UpdateEntry(uint32 entry, GameEventCreatureData const* eventData = nullptr, bool preserveHPAndPower = true);
 
         void ApplyGameEventSpells(GameEventCreatureData const* eventData, bool activated);
@@ -299,7 +307,8 @@ class Creature : public Unit
         bool IsTappedBy(Player const* player) const;
         bool IsSkinnableBy(Player const* player) const { return !skinningForOthersTimer || IsTappedBy(player); }
 
-        uint32 m_spells[CREATURE_MAX_SPELLS];
+        bool GetCharmSpellCooldown(uint32 spellId, uint32& cooldown);
+        nonstd::optional<CreatureCharmSpellEntry> m_spells[CREATURE_MAX_SPELLS];
 
         float GetAttackDistance(Unit const* pl) const;
         float GetDetectionRange() const { return m_detectionDistance; }
@@ -315,7 +324,7 @@ class Creature : public Unit
         void CallForHelp(float radius);
         void CallAssistance();
         void SetNoCallAssistance(bool val)
-        { 
+        {
             if (val)
                 AddCreatureState(CSTATE_ALREADY_CALL_ASSIST);
             else
@@ -376,9 +385,6 @@ class Creature : public Unit
 
         void SetInCombatWithZone(bool initialPulse = true);
         void EnterCombatWithTarget(Unit* pTarget);
-        bool canStartAttack(Unit const* who, bool force) const;
-        bool _IsTargetAcceptable(Unit const* target) const;
-        bool canCreatureAttack(Unit const* pVictim, bool force) const;
 
         // Smartlog
         time_t GetCombatTime(bool total) const;
@@ -407,7 +413,6 @@ class Creature : public Unit
 
         // AI helpers
         Unit* SelectNearestHostileUnitInAggroRange(bool useLOS, bool ignoreCivilians = false) const;
-        Unit* SelectNearestTargetInAttackDistance(float dist) const;
         Creature* FindNearestFriendlyGuard(float range) const;
         void CallNearestGuard(Unit* pEnemy) const;
 
@@ -449,7 +454,7 @@ class Creature : public Unit
         void ProcessThreatList(ThreatListProcesser* f);
 
         // Spell Launch :
-        // Return true if target found. 
+        // Return true if target found.
         bool CastSpellOnFarthestVictim (uint32 spellId, float min = 0.0f, float max = 100.0f, bool triggered = false);
         bool CastSpellOnNearestVictim(uint32 spellId, float min = 0.0f, float max = 100.0f, bool triggered = false);
         bool CastSpellOnHostileCasterInRange(uint32 spellId, float min = 0.0f, float max = 100.0f, bool triggered = false);
@@ -542,18 +547,26 @@ class Creature : public Unit
 
         bool IsLootAllowedDueToDamageOrigin() const
         {
+            if (HasStaticFlag(CREATURE_STATIC_FLAG_CORPSE_RAID))
+                return true;
+
             return 65 * m_playerDamageTaken > 35 * m_nonPlayerDamageTaken;
         }
 
         float GetXPModifierDueToDamageOrigin() const
         {
+            if (HasStaticFlag(CREATURE_STATIC_FLAG_CORPSE_RAID))
+                return 1.0f;
+
             // If players dealt less than 35% of the damage, no XP and no loot - or both=0
             if (!IsLootAllowedDueToDamageOrigin())
                 return 0.0f;
+
             return float(m_playerDamageTaken) / (m_playerDamageTaken + m_nonPlayerDamageTaken);
         }
 
         bool HasWeapon() const;
+        bool CanBeDisarmed() const final;
 
         void SetCallForHelpDist(float dist)
         {
@@ -578,7 +591,7 @@ class Creature : public Unit
             if (escortable)
                 AddCreatureState(CSTATE_ESCORTABLE);
             else
-                ClearCreatureState(CSTATE_ESCORTABLE); 
+                ClearCreatureState(CSTATE_ESCORTABLE);
         }
         bool IsEscortable() const { return HasCreatureState(CSTATE_ESCORTABLE); }
         bool CanAssistPlayers() const { return HasFactionTemplateFlag(FACTION_TEMPLATE_FLAG_ASSIST_PLAYERS) || HasExtraFlag(CREATURE_FLAG_EXTRA_CAN_ASSIST); }
@@ -647,7 +660,7 @@ class Creature : public Unit
         // Used to compute XP.
         uint32 m_playerDamageTaken;
         uint32 m_nonPlayerDamageTaken;
-        
+
         uint32 m_callForHelpTimer;
         float m_callForHelpDist;
         float m_leashDistance;

@@ -42,9 +42,8 @@ EndContentData */
 
 enum
 {
-    EMOTE_A_HELLO           = -1000204,
-    EMOTE_H_HELLO           = -1000205,
-    EMOTE_CLUCK_TEXT2       = -1000206,
+    EMOTE_HELLO             = 4714,
+    EMOTE_TEXT2             = 5170,
 
     QUEST_CLUCK             = 3861,
     FACTION_FRIENDLY        = 35,
@@ -74,7 +73,7 @@ struct npc_chicken_cluckAI : public CritterAI
 
     void Reset()
     {
-        m_uiResetFlagTimer = 120000;
+        m_uiResetFlagTimer = 20000;
 
         m_creature->SetFactionTemplateId(FACTION_CHICKEN);
         m_creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
@@ -91,14 +90,7 @@ struct npc_chicken_cluckAI : public CritterAI
                     m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
                     m_creature->SetFactionTemplateId(FACTION_FRIENDLY);
 
-                    DoScriptText(EMOTE_A_HELLO, m_creature);
-
-                    /* are there any difference in texts, after 3.x ?
-                    if (pPlayer->GetTeam() == HORDE)
-                        DoScriptText(EMOTE_H_HELLO, m_creature);
-                    else
-                        DoScriptText(EMOTE_A_HELLO, m_creature);
-                    */
+                    DoScriptText(EMOTE_HELLO, m_creature);
                 }
             }
         }
@@ -109,7 +101,8 @@ struct npc_chicken_cluckAI : public CritterAI
             {
                 m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
                 m_creature->SetFactionTemplateId(FACTION_FRIENDLY);
-                DoScriptText(EMOTE_CLUCK_TEXT2, m_creature);
+
+                DoScriptText(EMOTE_TEXT2, m_creature);
             }
         }
     }
@@ -120,7 +113,7 @@ struct npc_chicken_cluckAI : public CritterAI
         if (m_creature->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER))
         {
             if (m_uiResetFlagTimer < uiDiff)
-                EnterEvadeMode();
+                Reset();
             else
                 m_uiResetFlagTimer -= uiDiff;
         }
@@ -134,37 +127,15 @@ CreatureAI* GetAI_npc_chicken_cluck(Creature* pCreature)
     return new npc_chicken_cluckAI(pCreature);
 }
 
-bool QuestAccept_npc_chicken_cluck(Player* pPlayer, Creature* pCreature, Quest const* pQuest)
-{
-    if (pQuest->GetQuestId() == QUEST_CLUCK)
-    {
-        if (npc_chicken_cluckAI* pChickenAI = dynamic_cast<npc_chicken_cluckAI*>(pCreature->AI()))
-            pChickenAI->Reset();
-    }
-
-    return true;
-}
-
-bool QuestComplete_npc_chicken_cluck(Player* pPlayer, Creature* pCreature, Quest const* pQuest)
-{
-    if (pQuest->GetQuestId() == QUEST_CLUCK)
-    {
-        if (npc_chicken_cluckAI* pChickenAI = dynamic_cast<npc_chicken_cluckAI*>(pCreature->AI()))
-            pChickenAI->Reset();
-    }
-
-    return true;
-}
-
 /*######
 ## Triage quest
 ######*/
 
 enum
 {
-    SAY_DOC1                    = -1000201,
-    SAY_DOC2                    = -1000202,
-    SAY_DOC3                    = -1000203,
+    SAY_DOC1                    = 8355,
+    SAY_DOC2                    = 8359,
+    SAY_DOC3                    = 8361,
 
     QUEST_TRIAGE_H              = 6622,
     QUEST_TRIAGE_A              = 6624,
@@ -425,7 +396,7 @@ void npc_doctorAI::EndEvent(bool success)
         if (Creature* pPatient = m_creature->GetMap()->GetCreature(guid))
             pPatient->DespawnOrUnsummon(1);
     }
-    
+
     Reset();
 }
 
@@ -587,7 +558,7 @@ struct npc_tonk_mineAI : public ScriptedAI
     void UpdateAI(uint32 const uiDiff) override
     {
         if (!m_bArmed)
-        { 
+        {
             if (m_uiArmTimer < uiDiff)
             {
                 m_bArmed = true;
@@ -840,8 +811,8 @@ struct npc_arcanite_dragonlingAI : ScriptedPetAI
     uint32 m_firebuffetTimer;
     uint32 m_flamebreathTimer;
 
-    void Reset() override 
-    { 
+    void Reset() override
+    {
         m_firebuffetTimer = 5000;
         m_flamebreathTimer = urand(10000, 60000);
     }
@@ -970,7 +941,7 @@ CreatureAI* GetAI_npc_cannonball_runner(Creature* pCreature)
 enum
 {
     SPELL_IMMUNITY      = 29230,
-    SAY_CLEANER_AGGRO   = -1289010
+    SAY_CLEANER_AGGRO   = 9726
 };
 
 struct npc_the_cleanerAI : public ScriptedAI
@@ -1264,7 +1235,7 @@ struct npc_summon_possessedAI : ScriptedAI
             {
                 if (uint32 spellId = m_creature->GetUInt32Value(UNIT_CREATED_BY_SPELL))
                     pPlayer->RemoveAurasDueToSpell(spellId);
-            } 
+            }
         }
 
         ScriptedAI::JustDied(pKiller);
@@ -1465,7 +1436,7 @@ struct npc_target_dummyAI : ScriptedAI
 
     void EnterEvadeMode() override
     {
-        
+
     }
 
     void UpdateAI(uint32 const diff) override
@@ -1556,9 +1527,6 @@ struct npc_shahramAI : ScriptedPetAI
 
                 case 1:
                     shahramSpell = SPELL_FLAMES_OF_SHAHRAM;
-                    if (!urand(0, 99))
-                        DoScriptText(-1409006, m_creature);
-
                     break;
 
                 default:
@@ -1819,7 +1787,7 @@ struct npc_sickly_critterAI : CritterAI
                         m_creature->SetEntry(NPC_CURED_DEER);
                         m_creature->SetDisplayId(MODEL_CURED_DEER);
                         break;
-                    case HORDE:
+                    default: // HORDE
                         m_creature->SetEntry(NPC_CURED_GAZELLE);
                         m_creature->SetDisplayId(MODEL_CURED_GAZELLE);
                         break;
@@ -2102,7 +2070,7 @@ struct npc_kwee_peddlefeetAI : public ScriptedAI
 
         if (m_creature->GetZoneId() != winningZone && winningZone != 0)
             return;
-        
+
         // If Kwee Q. Peddlefeet is in the winner Zone, start the winner event here.
         switch (winningZone)
         {
@@ -2306,8 +2274,6 @@ void AddSC_npcs_special()
     newscript = new Script;
     newscript->Name = "npc_chicken_cluck";
     newscript->GetAI = &GetAI_npc_chicken_cluck;
-    newscript->pQuestAcceptNPC =   &QuestAccept_npc_chicken_cluck;
-    newscript->pQuestComplete = &QuestComplete_npc_chicken_cluck;
     newscript->RegisterSelf();
 
     newscript = new Script;

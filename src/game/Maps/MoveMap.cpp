@@ -21,6 +21,8 @@
 #include "VMapFactory.h"
 #include "MoveMap.h"
 #include "MoveMapSharedDefines.h"
+#include "Errors.h"
+#include "Util.h"
 
 namespace MMAP
 {
@@ -82,7 +84,7 @@ bool MMapManager::loadMapData(uint32 mapId)
     }
 
     dtNavMeshParams params;
-    fread(&params, sizeof(dtNavMeshParams), 1, file);
+    IgnoreResult(fread(&params, sizeof(dtNavMeshParams), 1, file));
     fclose(file);
 
     dtNavMesh* mesh = dtAllocNavMesh();
@@ -156,7 +158,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
 
     // read header
     MmapTileHeader fileHeader;
-    fread(&fileHeader, sizeof(MmapTileHeader), 1, file);
+    IgnoreResult(fread(&fileHeader, sizeof(MmapTileHeader), 1, file));
 
     if (fileHeader.mmapMagic != MMAP_MAGIC)
     {
@@ -174,7 +176,12 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     }
 
     unsigned char* data = (unsigned char*)dtAlloc(fileHeader.size, DT_ALLOC_PERM);
-    MANGOS_ASSERT(data);
+    if (!data)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Failed to load mmap %03u%02i%02i.mmtile", mapId, x, y);
+        fclose(file);
+        return false;
+    }
 
     size_t result = fread(data, fileHeader.size, 1, file);
     if (!result)
@@ -384,7 +391,7 @@ bool MMapManager::loadGameObject(uint32 displayId)
     }
 
     MmapTileHeader fileHeader;
-    fread(&fileHeader, sizeof(MmapTileHeader), 1, file);
+    IgnoreResult(fread(&fileHeader, sizeof(MmapTileHeader), 1, file));
 
     if (fileHeader.mmapMagic != MMAP_MAGIC)
     {

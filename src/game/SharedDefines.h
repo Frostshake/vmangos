@@ -167,7 +167,7 @@ enum Powers
     POWER_HEALTH                        = 0xFFFFFFFE    // (-2 as signed value)
 };
 
-#define MAX_POWERS                        5                 // not count POWER_RUNES for now
+#define MAX_POWERS                        5
 
 static char const* PowerToString(uint32 power)
 {
@@ -297,7 +297,7 @@ enum DamageEffectType
     DOT                     = 2,
     HEAL                    = 3,
     NODAMAGE                = 4,                            // used also in case when damage applied to health but not applied to spell channelInterruptFlags/etc
-    SELF_DAMAGE             = 5,
+    SELF_DAMAGE             = 5,                            // used for environmental damage
 };
 
 enum TextEmotes
@@ -1326,11 +1326,6 @@ enum PetDiet
 
 #define CHAIN_SPELL_JUMP_RADIUS 10
 
-// Max values for Guild
-#define GUILD_EVENTLOG_MAX_RECORDS  100
-#define GUILD_RANKS_MIN_COUNT       5
-#define GUILD_RANKS_MAX_COUNT       10
-
 enum AiReaction
 {
     AI_REACTION_ALERT    = 0,                               // pre-aggro (used in client packet handler)
@@ -1624,7 +1619,7 @@ enum Maps
     MAP_BLACKFATHOM_DEEPS   = 48,
     MAP_ULDAMAN             = 70,
     MAP_GNOMEREGAN          = 90,
-    MAP_SUNKEN_TEMLE        = 109,
+    MAP_SUNKEN_TEMPLE       = 109,
     MAP_RAZORFEN_DOWNS      = 129,
     MAP_EMERALD_DREAM       = 169,
     MAP_SCARLET_MONASTERY   = 189,
@@ -1682,9 +1677,6 @@ inline uint32 GetBattleGrounMapIdByTypeId(BattleGroundTypeId bgTypeId)
         case BATTLEGROUND_AB:   return MAP_ARATHI_BASIN;
         default:                return 0;   //none
     }
-
-    // impossible, just make compiler happy
-    return 0;
 }
 
 enum MailResponseType
@@ -1714,6 +1706,7 @@ enum MailResponseResult
 // in fact, these are also used elsewhere
 enum PetTameFailureReason
 {
+    PETTAME_NONE                    = 0,                    // no error, don't send to client
     PETTAME_INVALIDCREATURE         = 1,
     PETTAME_TOOMANY                 = 2,
     PETTAME_CREATUREALREADYOWNED    = 3,
@@ -1796,6 +1789,8 @@ enum TicketType
 // Used for some dynamic scaling systems, depending on total population
 #define BLIZZLIKE_REALM_POPULATION 2500
 
+struct WorldLocation;
+
 struct Position
 {
     Position() = default;
@@ -1809,24 +1804,27 @@ struct Position
     {
         return !x && !y && !z && !o;
     }
+
+    WorldLocation WithMapId(uint32 mapId) const;
 };
 
-struct WorldLocation
+struct WorldLocation : public Position
 {
-    uint16 mapId = 0;
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-    float o = 0.0f;
-    explicit WorldLocation(uint16 _mapid = 0, float _x = 0, float _y = 0, float _z = 0, float _o = 0)
-        : mapId(_mapid), x(_x), y(_y), z(_z), o(_o) {}
+    uint32 mapId = 0;
+    explicit WorldLocation(uint32 _mapid = 0, float _x = 0, float _y = 0, float _z = 0, float _o = 0)
+        : Position(_x, _y, _z, _o), mapId(_mapid) {}
     WorldLocation(WorldLocation const& loc)
-        : mapId(loc.mapId), x(loc.x), y(loc.y), z(loc.z), o(loc.o) {}
+        : Position(loc.x, loc.y, loc.z, loc.o), mapId(loc.mapId) {}
 
     bool IsEmpty() const
     {
-        return !mapId && !x && !y && !z && !o;
+        return !mapId && Position::IsEmpty();
     }
 };
+
+inline WorldLocation Position::WithMapId(uint32 mapId) const
+{
+    return WorldLocation(mapId, x, y, z, o);
+}
 
 #endif

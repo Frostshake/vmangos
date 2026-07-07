@@ -10,6 +10,8 @@
 #include "MoveSpline.h"
 #include "PathFinder.h"
 #include "MoveMap.h"
+#include "Map.h"
+#include "Utilities/Random.h"
 
 template<class T>
 void FearMovementGenerator<T>::_setTargetLocation(T &owner)
@@ -44,7 +46,7 @@ void FearMovementGenerator<T>::_setTargetLocation(T &owner)
         return;
     }
 
-    Movement::MoveSplineInit init(owner, "FearMovementGenerator");
+    Movement::MoveSplineInit init(owner, "FearMovementGenerator<T>::_setTargetLocation");
     init.Move(&path);
     init.SetWalk(_forceWalking);
     if (_customSpeed > 0)
@@ -250,7 +252,7 @@ bool TimedFearMovementGenerator::Update(Unit & owner, uint32 const&  time_diff)
         owner.ClearUnitState(UNIT_STATE_FLEEING_MOVE);
         return true;
     }
-    
+
     i_totalFleeTime.Update(time_diff);
 
     if (i_totalFleeTime.Passed())

@@ -20,13 +20,20 @@
  */
 
 #include "CreatureAI.h"
-#include "Spell.h"
 #include "Creature.h"
 #include "DBCStores.h"
 #include "Totem.h"
 #include "ObjectMgr.h"
 #include "ScriptMgr.h"
 #include "Group.h"
+#include "Utilities/Random.h"
+
+#include <unordered_set>
+
+CreatureAISpellsEntry::CreatureAISpellsEntry(CreatureSpellsEntry const& EntryStruct):
+    CreatureSpellsEntry(EntryStruct),
+    cooldown(urand(EntryStruct.delayInitialMin, EntryStruct.delayInitialMax))
+{}
 
 CreatureAI::CreatureAI(Creature* creature) :
     m_creature(creature), m_bUseAiAtControl(false),
@@ -130,7 +137,7 @@ void CreatureAI::DoSpellsListCasts(uint32 const uiDiff)
             {
                 if (bDontCast || m_creature->IsNonMeleeSpellCasted(false))
                     continue;
-            } 
+            }
 
             // Checked on startup.
             SpellEntry const* pSpellInfo = sSpellMgr.GetSpellEntry(spell.spellId);
@@ -138,7 +145,7 @@ void CreatureAI::DoSpellsListCasts(uint32 const uiDiff)
             Unit* pTarget = ToUnit(GetTargetByType(m_creature, m_creature, m_creature->GetMap(), spell.castTarget, spell.targetParam1, spell.targetParam2, pSpellInfo));
 
             SpellCastResult result = m_creature->TryToCast(pTarget, pSpellInfo, spell.castFlags, spell.probability);
-            
+
             switch (result)
             {
                 case SPELL_CAST_OK:
@@ -202,16 +209,17 @@ void CreatureAI::ClearTargetIcon()
     if (players.isEmpty())
         return;
 
-    std::set<Group*> instanceGroups;
+    std::unordered_set<Group*> instanceGroups;
 
     // Clear target icon for every unique group in instance
-    for (const auto& player : players)
+    for (auto const& player : players)
     {
         if (Group* pGroup = player.getSource()->GetGroup())
         {
-            if (instanceGroups.find(pGroup) == instanceGroups.end())
+            auto const& result = instanceGroups.insert(pGroup);
+
+            if (result.second)
             {
-                instanceGroups.insert(pGroup);
                 pGroup->ClearTargetIcon(m_creature->GetObjectGuid());
             }
         }
@@ -247,12 +255,12 @@ void CreatureAI::SetMeleeAttack(bool enabled)
     m_bMeleeAttack = enabled;
 
     if (Unit* pVictim = m_creature->GetVictim())
-    { 
+    {
         if (enabled)
         {
             m_creature->AddUnitState(UNIT_STATE_MELEE_ATTACKING);
             m_creature->SendMeleeAttackStart(pVictim);
-        } 
+        }
         else
         {
             m_creature->ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
@@ -279,7 +287,7 @@ void CreatureAI::SetCombatMovement(bool enabled)
         {
             m_creature->GetMotionMaster()->MovementExpired(false);
             m_creature->GetMotionMaster()->MoveChase(pVictim);
-        }  
+        }
     }
 }
 

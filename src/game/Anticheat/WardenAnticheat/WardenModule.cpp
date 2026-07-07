@@ -25,7 +25,7 @@
 
 #include "Platform/Define.h"
 #include "Crypto/Hash/MD5.h"
-
+#include "Progression.h"
 #include <zlib.h>
 
 #include <string>
@@ -33,6 +33,7 @@
 #include <fstream>
 #include <exception>
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
 
 WardenModule::WardenModule(std::string const& bin, std::string const& kf, std::string const& cr)
 {
@@ -129,3 +130,5 @@ bool WardenModule::Windows() const
 
     return false;
 }
+
+#endif

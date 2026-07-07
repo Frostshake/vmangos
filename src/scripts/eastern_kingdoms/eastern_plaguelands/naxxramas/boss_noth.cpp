@@ -26,16 +26,16 @@
 // pastbin link above has various noted timers and sources. Not much useful, but it's some of my notes
 // from when researching the encounter.
 
-// Regarding summoning add spells, there are a few spells which summon both two types of mobs, 
+// Regarding summoning add spells, there are a few spells which summon both two types of mobs,
 // or multiple of the same mob in different locations with the same spell. However
-// our core does not support multiple spell target coordinates due to limitations with the DB, so 
+// our core does not support multiple spell target coordinates due to limitations with the DB, so
 // we have to use the spells which summon a single creature.
 
 enum eSpell
 {
     SPELL_TP_CENTER           = 29231,
     SPELL_TP_BALC             = 29216,
-    SPELL_CRIPPLE             = 29212, // used on players where noth blinked FROM 
+    SPELL_CRIPPLE             = 29212, // used on players where noth blinked FROM
     SPELL_CURSE_PLAGUEBRINGER = 29213,
     SPELL_IMMUNE_ALL          = 29230, // used on TP to balc
 
@@ -52,16 +52,16 @@ enum eSpell
     SPELL_SUM_CHAMP_SW2 = 29224,
     SPELL_SUM_CHAMP_SW3 = 29225,
     SPELL_SUM_CHAMP_SW4 = 29227,
-    
+
     SPELL_SUM_CHAMP_W   = 29238,
-    
+
     SPELL_SUM_CHAMP_NW1 = 29255,
     SPELL_SUM_CHAMP_NW2 = 29267,
     SPELL_SUM_CHAMP_NW3 = 29257,
-    
+
     SPELL_SUM_CHAMP_NE1 = 29258,
     SPELL_SUM_CHAMP_NE2 = 29262,
-    
+
     SPELL_SUM_GUARD_NE = 29226,
     SPELL_SUM_GUARD_NW = 29239,
     SPELL_SUM_GUARD_SW1 = 29256,
@@ -262,12 +262,12 @@ struct boss_nothAI : public ScriptedAI
         // We need to spawn 4 champions. We have 10 different possible locations,
         // and the adds need to be somewhat evenly spread out, yet somewhat randomized.
         std::vector<uint32> champs(ChampionSpells, ChampionSpells + sizeof(ChampionSpells) / sizeof(uint32));
-        
+
         // First selecting one random champ from each of the 3 main groups
         uint32 champ1 = champs[urand(g1_start, g1_start + g1_size - 1)];
         uint32 champ2 = champs[urand(g2_start, g2_start + g2_size - 1)];
         uint32 champ3 = champs[urand(g3_start, g3_start + g3_size - 1)];
-        
+
         // Moving the selected champions to the end of the vector
         auto nend = std::remove(champs.begin(), champs.end(), champ1);
         nend = std::remove(champs.begin(), nend, champ2);
@@ -277,9 +277,10 @@ struct boss_nothAI : public ScriptedAI
         DoCastSpellIfCan(m_creature, champ1, CF_TRIGGERED);
         DoCastSpellIfCan(m_creature, champ2, CF_TRIGGERED);
         DoCastSpellIfCan(m_creature, champ3, CF_TRIGGERED);
-        
+
         // Choosing the final champion at random between the remaining 7 locations
-        uint32 champ4 = champs[urand(0, std::distance(champs.begin(), nend))];
+        uint32 champ4Idx = urand(0, std::distance(champs.begin(), nend));
+        uint32 champ4 = champs[champ4Idx];
         DoCastSpellIfCan(m_creature, champ4, CF_TRIGGERED);
     }
 
@@ -332,7 +333,7 @@ struct boss_nothAI : public ScriptedAI
             AttackStart(target);
 
         // note that we increment phaseCounter here
-        switch (++phaseCounter) 
+        switch (++phaseCounter)
         {
             // case 0: won't happen, its initialized from Aggro()
             case 1:
@@ -350,7 +351,7 @@ struct boss_nothAI : public ScriptedAI
         }
     }
 
-    void SummonedCreatureJustDied(Creature* unit) override 
+    void SummonedCreatureJustDied(Creature* unit) override
     {
         unit->ForcedDespawn(3000);
     }
@@ -383,7 +384,7 @@ struct boss_nothAI : public ScriptedAI
             ScriptedAI::AttackStart(pWho);
     }
 
-    void DamageTaken(Unit* /*pDoneBy*/, uint32& uiDamage) override 
+    void DamageTaken(Unit* /*pDoneBy*/, uint32& uiDamage) override
     {
         if (isOnBalc && uiDamage > 0)
             uiDamage = 0;
@@ -409,7 +410,7 @@ struct boss_nothAI : public ScriptedAI
                 }
             }
         }
-        
+
         killSayCooldown -= std::min(killSayCooldown, uiDiff);
         m_events.Update(uiDiff);
         while (auto l_EventId = m_events.ExecuteEvent())
@@ -450,11 +451,31 @@ CreatureAI* GetAI_boss_noth(Creature* pCreature)
     return new boss_nothAI(pCreature);
 }
 
+// 29213 - Curse of the Plaguebringer (Naxxramas, Noth the Plaguebringer)
+struct NothCurseOfThePlaguebringerScript : SpellScript
+{
+    void OnSetTargetMap(Spell* /*spell*/, SpellEffectIndex /*effIdx*/, uint32& /*targetMode*/, float& /*radius*/, uint32& /*unMaxTargets*/, bool& selectClosestTargets) const final
+    {
+        selectClosestTargets = true;
+    }
+};
+
+SpellScript* GetScript_NothCurseOfThePlaguebringer(SpellEntry const*)
+{
+    return new NothCurseOfThePlaguebringerScript();
+}
+
 void AddSC_boss_noth()
 {
-    Script* NewScript;
-    NewScript = new Script;
-    NewScript->Name = "boss_noth";
-    NewScript->GetAI = &GetAI_boss_noth;
-    NewScript->RegisterSelf();
+    Script* pNewScript;
+
+    pNewScript = new Script;
+    pNewScript->Name = "boss_noth";
+    pNewScript->GetAI = &GetAI_boss_noth;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "spell_noth_curse_of_the_plaguebringer";
+    pNewScript->GetSpellScript = &GetScript_NothCurseOfThePlaguebringer;
+    pNewScript->RegisterSelf();
 }

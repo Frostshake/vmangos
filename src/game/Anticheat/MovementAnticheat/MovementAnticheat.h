@@ -1,5 +1,5 @@
-#ifndef _HEADER_CHEATS
-#define _HEADER_CHEATS
+#ifndef MANGOS_MOVEMENT_ANTICHEAT_H
+#define MANGOS_MOVEMENT_ANTICHEAT_H
 
 #include "Common.h"
 #include "UnitDefines.h"
@@ -7,7 +7,6 @@
 #include "SniffFile.h"
 
 #include <array>
-#include <sstream>
 #include <deque>
 #include <mutex>
 
@@ -56,13 +55,14 @@ enum CheatType
 };
 
 #define CHEATS_UPDATE_INTERVAL      4000
-const char* GetMovementCheatName(CheatType type);
+char const* GetMovementCheatName(CheatType type);
 
 class Player;
 class MovementInfo;
 class ChatHandler;
 class WorldSession;
 class WorldPacket;
+class ServerPacket;
 
 class MovementAnticheat
 {
@@ -72,6 +72,7 @@ class MovementAnticheat
         void Init();
         void InitNewPlayer(Player* pPlayer);
         void ResetJumpCounters();
+        static void InitWallClimbLimits();
 
         void AddCheats(uint32 cheats, uint32 count = 1);
         void StoreCheat(uint32 type, uint32 count = 1);
@@ -85,6 +86,9 @@ class MovementAnticheat
         uint32 HandlePositionTests(Player* pPlayer, MovementInfo& movementInfo, uint16 opcode);
         uint32 HandleFlagTests(Player* pPlayer, MovementInfo& movementInfo, uint16 opcode);
         bool HandleSplineDone(Player* pPlayer, MovementInfo const& movementInfo, uint32 splineId);
+
+        // Will save a copy of the ServerPacket
+        void LogMovementPacket(ServerPacket const& packet);
         void LogMovementPacket(bool isClientPacket, WorldPacket const& packet);
         static bool IsLoggedOpcode(uint16 opcode);
 
@@ -116,7 +120,7 @@ class MovementAnticheat
         uint32 CheckSpeedHack(MovementInfo const& movementInfo, uint16 opcode);
         uint32 CheckTimeDesync(MovementInfo const& movementInfo);
 
-        void AddMessageToPacketLog(std::string message);
+        void AddMessageToPacketLog(std::string const& message);
 
         MovementInfo& GetLastMovementInfo();
         MovementInfo const& GetLastMovementInfo() const;
@@ -144,6 +148,10 @@ class MovementAnticheat
         uint32 m_movementPacketsCount = 0;
         TurnType m_turnType = TURN_NONE;
 
+        // Wallclimb limits - initialized from vmangos.conf
+        static float m_wallSlope;
+        static float m_wallSlopeHigh;
+
         Player* me = nullptr; // current player object that checks run on, changes on mind control
         WorldSession* const m_session = nullptr; // session to which the cheat data belongs, does not change
 
@@ -154,4 +162,4 @@ class MovementAnticheat
         std::mutex m_packetLogMutex;
 };
 
-#endif
+#endif // MANGOS_MOVEMENT_ANTICHEAT_H

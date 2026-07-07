@@ -734,9 +734,9 @@ struct npc_kernobeeAI : public FollowerAI
         {
             if (m_nextStepTimer < uiDiff)
             {
-                if (m_creature->FindNearestCreature(NPC_ALARM_A_BOMB_2600, 10.0f)) //détecter la bombe a proximité.
+                if (m_creature->FindNearestCreature(NPC_ALARM_A_BOMB_2600, 10.0f)) // ALARM-A-BOMB must always be near escort NPC
                 {
-                    m_creature->SetWalk(true);//speed influences speed of follower
+                    m_creature->SetWalk(true); // speed influences speed of follower
                     SetFollowPaused(false);
                     m_nextStepTimer = 5 * MINUTE * IN_MILLISECONDS;
                     nextStep = 2;
@@ -885,7 +885,27 @@ bool QuestAccept_npc_kernobee(Player* pPlayer, Creature* pCreature, Quest const*
     return true;
 }
 
+// 12709 - Collecting Fallout (Heavy Leaden Collection Phial)
+struct GnomereganCollectingFalloutScript : public SpellScript
+{
+    uint32 chosenEffect = 0;
 
+    void OnInit(Spell* /*spell*/) final
+    {
+        chosenEffect = urand(EFFECT_INDEX_0, EFFECT_INDEX_1);
+    }
+
+    bool OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const final
+    {
+        // only execute one of the trigger spell effects
+        return effIdx == chosenEffect;
+    }
+};
+
+SpellScript* GetScript_GnomereganCollectingFallout(SpellEntry const*)
+{
+    return new GnomereganCollectingFalloutScript();
+}
 
 void AddSC_gnomeregan()
 {
@@ -902,5 +922,10 @@ void AddSC_gnomeregan()
     pNewScript->Name = "npc_kernobee";
     pNewScript->GetAI = &GetAI_npc_kernobee;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_kernobee;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "spell_gnomeregan_collecting_fallout";
+    pNewScript->GetSpellScript = &GetScript_GnomereganCollectingFallout;
     pNewScript->RegisterSelf();
 }

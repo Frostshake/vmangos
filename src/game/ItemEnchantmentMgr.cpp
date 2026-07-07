@@ -25,10 +25,11 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "ProgressBar.h"
+#include "Utilities/Random.h"
+#include "World.h"
+
 #include <list>
 #include <vector>
-#include "Util.h"
-#include "World.h"
 
 struct EnchStoreItem
 {
@@ -51,7 +52,6 @@ void LoadRandomEnchantmentsTable()
 {
     RandomItemEnch.clear();                                 // for reload case
 
-    EnchantmentStore::const_iterator tab;
     uint32 entry, ench;
     uint32 count = 0;
 

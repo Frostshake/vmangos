@@ -26,7 +26,6 @@
 #include <array>
 #include <vector>
 
-
 enum TrainerType                                            // this is important type for npcs!
 {
     TRAINER_TYPE_CLASS             = 0,
@@ -92,7 +91,6 @@ enum CreatureEliteType
     CREATURE_ELITE_RAREELITE       = 2,
     CREATURE_ELITE_WORLDBOSS       = 3,
     CREATURE_ELITE_RARE            = 4,
-    CREATURE_UNKNOWN               = 5                      // found in 2.2.3 for 2 mobs
 };
 
 enum CreatureStaticFlags
@@ -109,7 +107,7 @@ enum CreatureStaticFlags
     CREATURE_STATIC_FLAG_UNINTERACTIBLE                    = 0x00000200, // Applies UNIT_FLAG_NOT_SELECTABLE on spawn.
     CREATURE_STATIC_FLAG_NO_AUTOMATIC_REGEN                = 0x00000400, // Will not regen health and mana.
     CREATURE_STATIC_FLAG_DESPAWN_INSTANTLY                 = 0x00000800, // Despawn corpse instantly on death.
-    CREATURE_STATIC_FLAG_CORPSE_RAID                       = 0x00001000, // Does not check distance upon death for loot and xp eligibility.
+    CREATURE_STATIC_FLAG_CORPSE_RAID                       = 0x00001000, // Does not check distance or damage origin upon death for loot and xp eligibility.
     CREATURE_STATIC_FLAG_CREATOR_LOOT                      = 0x00002000, // Can be looted by the player who created it.
     CREATURE_STATIC_FLAG_NO_DEFENSE                        = 0x00004000, // Defense skill is 0.
     CREATURE_STATIC_FLAG_NO_SPELL_DEFENSE                  = 0x00008000, // Cannot resist spells.
@@ -280,7 +278,7 @@ struct CreatureInfo
     uint32  skinning_loot_id = 0;
     uint32  gold_min = 0;
     uint32  gold_max = 0;
-    uint32  spells[CREATURE_MAX_SPELLS] = {};
+    uint32  totem_spell_id = 0;
     uint32  spell_list_id = 0;
     uint32  pet_spell_list_id = 0;
     uint32  spawn_spell_id = 0;
@@ -341,33 +339,6 @@ struct EquipmentEntry
     uint32 item[3] = { 0, 0, 0 };
 };
 
-struct EquipmentTemplate
-{
-    uint32 totalProbability = 0;
-    std::vector<EquipmentEntry> equipment;
-
-    EquipmentEntry const* ChooseEquipmentEntry() const
-    {
-        if (!totalProbability)
-            return nullptr;
-
-        uint32 const roll = urand(0, totalProbability - 1);
-        uint32 sum = 0;
-
-        for (auto const& itr : equipment)
-        {
-            if (!itr.probability)
-                continue;
-
-            sum += itr.probability;
-            if (roll < sum)
-                return &itr;
-        }
-
-        return nullptr;
-    }
-};
-
 #define MAX_CREATURE_IDS_PER_SPAWN 5
 
 // from `creature` table
@@ -389,31 +360,10 @@ struct CreatureData
 
     // helper function
     ObjectGuid GetObjectGuid(uint32 lowguid) const { return ObjectGuid(CreatureInfo::GetHighGuid(), creature_id[0], lowguid); }
-    uint32 GetRandomRespawnTime() const { return urand(spawntimesecsmin, spawntimesecsmax); }
-    uint32 ChooseCreatureId() const
-    {
-        uint32 creatureId = 0;
-        uint32 creatureIdCount = 0;
-        for (; creatureIdCount < MAX_CREATURE_IDS_PER_SPAWN && creature_id[creatureIdCount]; ++creatureIdCount);
-
-        if (creatureIdCount)
-            creatureId = creature_id[urand(0, creatureIdCount - 1)];
-
-        if (!creatureId)
-            creatureId = 1;
-
-        return creatureId;
-    }
-    bool HasCreatureId(uint32 id) const
-    {
-        return std::find(creature_id.begin(), creature_id.end(), id) != creature_id.end();
-    }
-    uint32 GetCreatureIdCount() const
-    {
-        uint32 creatureIdCount = 0;
-        for (; creatureIdCount < MAX_CREATURE_IDS_PER_SPAWN && creature_id[creatureIdCount]; ++creatureIdCount);
-        return creatureIdCount;
-    }
+    uint32 GetRandomRespawnTime() const;
+    uint32 ChooseCreatureId() const;
+    bool HasCreatureId(uint32 id) const;
+    uint32 GetCreatureIdCount() const;
 };
 
 // from `creature_addon` table
@@ -471,6 +421,24 @@ struct CreatureClassLevelStats
 #else
 #pragma pack(pop)
 #endif
+
+// ^^^ Data packed area above this line. Only use primitive data types. ^^^
+
+struct EquipmentTemplate
+{
+    uint32 totalProbability = 0;
+    std::vector<EquipmentEntry> equipment;
+
+    EquipmentEntry const* ChooseEquipmentEntry() const;
+};
+
+struct CreatureCharmSpellEntry
+{
+    uint32 spellId = 0;
+    float availability = 100.0f;
+    uint32 cooldownMin = 0;
+    uint32 cooldownMax = 0;
+};
 
 struct CreatureLocale
 {

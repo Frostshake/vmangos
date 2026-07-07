@@ -25,6 +25,7 @@
 #include "Player.h"
 #include "SpellAuras.h"
 #include "World.h"
+#include "Platform/CompilerDefs.h"
 
 /*#######################################
 ########                         ########
@@ -321,7 +322,7 @@ void Player::UpdateAttackPowerAndDamage(bool ranged)
         index_mod = UNIT_FIELD_RANGED_ATTACK_POWER_MODS;
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_8_4
         index_mult = UNIT_FIELD_RANGED_ATTACK_POWER_MULTIPLIER;
-#endif  
+#endif
     }
 
     float baseAttackPower = GetAttackPowerFromStrengthAndAgility(ranged, GetStat(STAT_STRENGTH), GetStat(STAT_AGILITY));
@@ -381,24 +382,28 @@ void Player::CalculateMinMaxDamage(WeaponAttackType attType, bool normalized, fl
 
     if (IsAttackSpeedOverridenShapeShift()) // check if player is in shapeshift which doesnt use weapon
     {
-        /* Druids don't use weapons so a weapon damage index > 0 
+        /* Druids don't use weapons so a weapon damage index > 0
            should not affect their damage. Fixes crazy druid scaling
            when using melee weapons with two or more damage types on it */
         if (index > 0)
         {
-            // Note that CalculateDamage will pull max_damage up to 5.0f, 
+            // Note that CalculateDamage will pull max_damage up to 5.0f,
             // so they'll still get some extra damage...
             weapon_mindamage = 0.0f;
             weapon_maxdamage = 0.0f;
         }
-        else 
+        else
         {
             uint32 lvl = GetLevel();
             if (lvl > 60)
                 lvl = 60;
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_6_1
+#if COMPILER == COMPILER_MICROSOFT
 #pragma warning( push )
-#pragma warning( disable : 4065)
+#pragma warning(disable : 4065) // Has default but no case
+#endif
+#endif
 
             switch (GetShapeshiftForm())
             {
@@ -417,8 +422,12 @@ void Player::CalculateMinMaxDamage(WeaponAttackType attType, bool normalized, fl
                     break;
             }
 
-#pragma warning( pop ) 
-            
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_6_1
+#if COMPILER == COMPILER_MICROSOFT
+#pragma warning( pop )
+#endif
+#endif
+
             total_value = 0.0f;                             // remove benefit from weapon enchants
         }
     }
@@ -804,7 +813,7 @@ void Creature::UpdateManaRegen()
     float power_regen = GetTotalAuraMultiplierByMiscValue(SPELL_AURA_MOD_POWER_REGEN_PERCENT, POWER_MANA);
     // Mana regen from SPELL_AURA_MOD_POWER_REGEN aura
     float power_regen_mp5 = GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_POWER_REGEN, POWER_MANA) / 5.0f;
-    
+
     m_manaRegen = (GetRegenMPPerSpirit() * power_regen + power_regen_mp5 + (0.6f * sqrt(intellect) / 5.0f)) * ManaIncreaseRate * 5.0f;
 }
 
@@ -902,7 +911,7 @@ void Creature::UpdateDamagePhysical(WeaponAttackType attType)
     float weapon_mindamage = GetWeaponDamageRange(attType, MINDAMAGE);
     float weapon_maxdamage = GetWeaponDamageRange(attType, MAXDAMAGE);
 
-    // Disarm effects. Only applies to mobs with a weapon equipped. Sources suggest a 
+    // Disarm effects. Only applies to mobs with a weapon equipped. Sources suggest a
     // ~60% damage reduction on mobs which can be disarmed and have a weapon
     // http://wowwiki.wikia.com/wiki/Attumen_the_Huntsman?oldid=1377353
     // http://wowwiki.wikia.com/wiki/Disarm?direction=prev&oldid=200198
@@ -1003,7 +1012,7 @@ void Pet::UpdateResistances(uint32 school)
 
 void Pet::UpdateArmor()
 {
-    float amount = (GetStat(STAT_AGILITY) * (getPetType() == HUNTER_PET ? 2.0f : 1.0f));
+    float amount = (GetStat(STAT_AGILITY) * (GetPetType() == HUNTER_PET ? 2.0f : 1.0f));
 
     m_auraModifiersGroup[UNIT_MOD_ARMOR][TOTAL_VALUE] += amount;
     int32 value = GetTotalResistanceValue(SPELL_SCHOOL_NORMAL);
@@ -1063,7 +1072,7 @@ void Pet::UpdateDamagePhysical(WeaponAttackType attType)
      * We have to ignore creatures that don't have AP set in database (we would divide by 0)
      */
     // Compute base attack power
-    float createAttackPower = getPetType() == HUNTER_PET ? 2.0f * GetCreateStat(STAT_STRENGTH) - 20.0f
+    float createAttackPower = GetPetType() == HUNTER_PET ? 2.0f * GetCreateStat(STAT_STRENGTH) - 20.0f
                                                          : GetInt32Value(UNIT_FIELD_ATTACK_POWER);
 
     if (createAttackPower > 0)
@@ -1077,7 +1086,7 @@ void Pet::UpdateDamagePhysical(WeaponAttackType attType)
     float maxdamage = ((base_value + weapon_maxdamage) * base_pct + total_value + total_phys) * total_pct;
 
     //  Pet's base damage changes depending on happiness
-    if (getPetType() == HUNTER_PET)
+    if (GetPetType() == HUNTER_PET)
     {
         switch (GetHappinessState())
         {

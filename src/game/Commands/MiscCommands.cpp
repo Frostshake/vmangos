@@ -31,6 +31,7 @@
 #include "Mail.h"
 #include "MassMailMgr.h"
 #include "InstanceData.h"
+#include "MapManager.h"
 #include "BattleGroundMgr.h"
 
 bool ChatHandler::HandleHelpCommand(char* args)
@@ -519,6 +520,47 @@ bool ChatHandler::HandleGuildRenameCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleGuildShowLogCommand(char* args)
+{
+    if (!args || !*args)
+        return false;
+
+    char* guildName = ExtractQuotedArg(&args);
+    if (!guildName)
+        return false;
+
+    Guild* target = sGuildMgr.GetGuildByName(guildName);
+    if (!target)
+    {
+        SendSysMessage(LANG_GUILD_NOT_FOUND);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (target->GetGuildEventLog().empty())
+    {
+        SendSysMessage("Guild log is empty.");
+        return true;
+    }
+
+    time_t now = time(nullptr);
+    SendSysMessage("Showing guild log:");
+    for (auto const& itr : target->GetGuildEventLog())
+    {
+        time_t timeSinceEvent = now - itr.timestamp;
+        PSendSysMessage("- Type: %s%s%s, Player1: %s, Player2: %s, Time: %s%s%s ago",
+            m_session ? "|cff00ff00" : "",
+            GuildEventLogTypeToString(itr.eventType),
+            m_session ? "|r" : "",
+            GetNameLink(itr.playerGuid1).c_str(),
+            GetNameLink(itr.playerGuid2).c_str(),
+            m_session ? "|cffffffff" : "",
+            secsToTimeString(timeSinceEvent, true).c_str(),
+            m_session ? "|r" : "");
+    }
+    return true;
+}
+
 bool ChatHandler::HandleInstanceBindingMode(char* args)
 {
     Player* player = GetSession()->GetPlayer();
@@ -600,6 +642,30 @@ bool ChatHandler::HandleInstanceGetDataCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleInstanceSetDataCommand(char* args)
+{
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+    Map* pMap = pPlayer->FindMap();
+    if (!pMap)
+        return false;
+    InstanceData* pData = pMap->GetInstanceData();
+    if (!pData)
+        return false;
+    uint32 index = 0;
+    if (!ExtractUInt32(&args, index))
+        return false;
+    uint32 value = 0;
+    if (!ExtractUInt32(&args, value))
+        return false;
+
+    pData->SetData(index, value);
+
+    PSendSysMessage("Data[%u] = %u", index, pData->GetData(index));
+    return true;
+}
+
 bool ChatHandler::HandleInstancePerfInfosCommand(char* args)
 {
     Player* player = GetSession()->GetPlayer();
@@ -633,7 +699,9 @@ bool ChatHandler::HandleInstanceListBindsCommand(char* /*args*/)
     {
         DungeonPersistentState* state = bind.second.state;
         std::string timeleft;
-        if (!bind.second.perm)
+        // permanent binds are raids, which reset globally per map since 1.9,
+        // before that each raid instance has its own reset time
+        if (!bind.second.perm || !DungeonResetScheduler::IsRaidResetSchedulingGlobal())
             timeleft = secsToTimeString(state->GetResetTime() - time(nullptr), true);
         else
             timeleft = secsToTimeString(sMapPersistentStateMgr.GetScheduler().GetResetTimeFor(bind.first) - time(nullptr));
@@ -659,7 +727,7 @@ bool ChatHandler::HandleInstanceListBindsCommand(char* /*args*/)
         {
             DungeonPersistentState* state = bind.second.state;
             std::string timeleft;
-            if (!bind.second.perm)
+            if (!bind.second.perm || !DungeonResetScheduler::IsRaidResetSchedulingGlobal())
                 timeleft = secsToTimeString(state->GetResetTime() - time(nullptr), true);
             else
                 timeleft = secsToTimeString(sMapPersistentStateMgr.GetScheduler().GetResetTimeFor(bind.first) - time(nullptr));
@@ -701,19 +769,19 @@ void ChatHandler::HandleInstanceUnbindHelper(Player* player, bool got_map, uint3
 
             if (MapEntry const* entry = sMapStorage.LookupEntry<MapEntry>(itr->first))
             {
-                ChatHandler(player).PSendSysMessage("unbinding map: %d (%s) inst: %d perm: %s canReset: %s TTR: %s",
+                player->PSendSysMessage("unbinding map: %d (%s) inst: %d perm: %s canReset: %s TTR: %s",
                     itr->first, entry->name, save->GetInstanceId(), itr->second.perm ? "yes" : "no",
                     save->CanReset() ? "yes" : "no", timeleft.c_str());
             }
             else
-                ChatHandler(player).PSendSysMessage("bound for a nonexistent map %u", itr->first);
+                player->PSendSysMessage("bound for a nonexistent map %u", itr->first);
             player->UnbindInstance(itr);
             counter++;
         }
         else
             ++itr;
     }
-    ChatHandler(player).PSendSysMessage("instances unbound: %d", counter);
+    player->PSendSysMessage("instances unbound: %d", counter);
 }
 
 bool ChatHandler::HandleInstanceUnbindCommand(char* args)
@@ -724,7 +792,7 @@ bool ChatHandler::HandleInstanceUnbindCommand(char* args)
     Player* player = GetSelectedPlayer();
     if (!player || GetAccessLevel() < SEC_BASIC_ADMIN)
         player = m_session->GetPlayer();
-   
+
     uint32 mapid = 0;
     bool got_map = false;
 
@@ -747,7 +815,7 @@ bool ChatHandler::HandleInstanceGroupUnbindCommand(char* args)
     if (!*args)
         return false;
 
-    Player* player = player = GetSelectedPlayer();
+    Player* player = GetSelectedPlayer();
     if (!player || player->InBattleGround())
         return false;
 
@@ -1186,9 +1254,9 @@ bool ChatHandler::HandlePoolSpawnsCommand(char* args)
     for (const auto itr : goSpawns)
         if (!pool_id || pool_id == sPoolMgr.IsPartOfAPool<GameObject>(itr))
             if (GameObjectData const* data = sObjectMgr.GetGOData(itr))
-                if (GameObjectInfo const* info = ObjectMgr::GetGameObjectInfo(data->id))
+                if (GameObjectInfo const* info = sObjectMgr.GetGameObjectTemplate(data->id))
                     PSendSysMessage(LANG_GO_LIST_CHAT, itr, PrepareStringNpcOrGoSpawnInformation<GameObject>(itr).c_str(),
-                                    itr, info->name, data->position.x, data->position.y, data->position.z, data->position.mapId);
+                                    itr, info->name.c_str(), data->position.x, data->position.y, data->position.z, data->position.mapId);
 
     return true;
 }
@@ -1280,15 +1348,15 @@ bool ChatHandler::HandlePoolInfoCommand(char* args)
         {
             if (GameObjectData const* data = sObjectMgr.GetGOData(itr.guid))
             {
-                if (GameObjectInfo const* info = ObjectMgr::GetGameObjectInfo(data->id))
+                if (GameObjectInfo const* info = sObjectMgr.GetGameObjectTemplate(data->id))
                 {
                     char const* active = goSpawns && goSpawns->find(itr.guid) != goSpawns->end() ? active_str.c_str() : "";
                     if (m_session)
                         PSendSysMessage(LANG_POOL_CHANCE_GO_LIST_CHAT, itr.guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(itr.guid).c_str(),
-                                        itr.guid, info->name, data->position.x, data->position.y, data->position.z, data->position.mapId, itr.chance, active);
+                                        itr.guid, info->name.c_str(), data->position.x, data->position.y, data->position.z, data->position.mapId, itr.chance, active);
                     else
                         PSendSysMessage(LANG_POOL_CHANCE_GO_LIST_CONSOLE, itr.guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(itr.guid).c_str(),
-                                        info->name, data->position.x, data->position.y, data->position.z, data->position.mapId, itr.chance, active);
+                                        info->name.c_str(), data->position.x, data->position.y, data->position.z, data->position.mapId, itr.chance, active);
                 }
             }
         }
@@ -1302,15 +1370,15 @@ bool ChatHandler::HandlePoolInfoCommand(char* args)
         {
             if (GameObjectData const* data = sObjectMgr.GetGOData(itr.guid))
             {
-                if (GameObjectInfo const* info = ObjectMgr::GetGameObjectInfo(data->id))
+                if (GameObjectInfo const* info = sObjectMgr.GetGameObjectTemplate(data->id))
                 {
                     char const* active = goSpawns && goSpawns->find(itr.guid) != goSpawns->end() ? active_str.c_str() : "";
                     if (m_session)
                         PSendSysMessage(LANG_POOL_GO_LIST_CHAT, itr.guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(itr.guid).c_str(),
-                                        itr.guid, info->name, data->position.x, data->position.y, data->position.z, data->position.mapId, active);
+                                        itr.guid, info->name.c_str(), data->position.x, data->position.y, data->position.z, data->position.mapId, active);
                     else
                         PSendSysMessage(LANG_POOL_GO_LIST_CONSOLE, itr.guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(itr.guid).c_str(),
-                                        info->name, data->position.x, data->position.y, data->position.z, data->position.mapId, active);
+                                        info->name.c_str(), data->position.x, data->position.y, data->position.z, data->position.mapId, active);
                 }
             }
         }
@@ -1397,11 +1465,11 @@ void ChatHandler::ShowTriggerListHelper(AreaTriggerEntry const* atEntry)
         snprintf(dist_buf, 50, GetMangosString(LANG_TRIGGER_DIST), dist);
 
         PSendSysMessage(LANG_TRIGGER_LIST_CHAT,
-                        atEntry->id, atEntry->id, atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, dist_buf, tavern, quest);
+                        atEntry->id, atEntry->id, atEntry->map_id, atEntry->x, atEntry->y, atEntry->z, dist_buf, tavern, quest);
     }
     else
         PSendSysMessage(LANG_TRIGGER_LIST_CONSOLE,
-                        atEntry->id, atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, tavern, quest);
+                        atEntry->id, atEntry->map_id, atEntry->x, atEntry->y, atEntry->z, tavern, quest);
 
     if (AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(atEntry->id))
         ShowTriggerTargetListHelper(atEntry->id, at, true);
@@ -1449,7 +1517,7 @@ bool ChatHandler::HandleTriggerCommand(char* args)
             if (!atTestEntry)
                 continue;
 
-            if (atTestEntry->mapid != m_session->GetPlayer()->GetMapId())
+            if (atTestEntry->map_id != m_session->GetPlayer()->GetMapId())
                 continue;
 
             float dx = atTestEntry->x - player->GetPositionX();
@@ -1531,7 +1599,7 @@ bool ChatHandler::HandleTriggerNearCommand(char* args)
         if (!atEntry)
             continue;
 
-        if (atEntry->mapid != m_session->GetPlayer()->GetMapId())
+        if (atEntry->map_id != m_session->GetPlayer()->GetMapId())
             continue;
 
         float dx = atEntry->x - player->GetPositionX();
@@ -1713,7 +1781,7 @@ bool ChatHandler::HandleBGStatusCommand(char *args)
         uiHordeCount    = 0;
 
         BattleGroundQueueTypeId bgQueueTypeId = BattleGroundMgr::BgQueueTypeId(BattleGroundTypeId(bgTypeId));
-        // Doit etre une référence (&), sinon crash par la suite ...
+        // Must be a reference (&), otherwise crash later on ...
         BattleGroundQueue& queue = sBattleGroundMgr.m_battleGroundQueues[bgQueueTypeId];
         for (const auto& itr : queue.m_queuedPlayers)
         {

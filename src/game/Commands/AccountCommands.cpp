@@ -109,7 +109,7 @@ bool ChatHandler::HandleAccountSetGmLevelCommand(char* args)
 
     if (targetPlayer)
     {
-        ChatHandler(targetPlayer).PSendSysMessage(LANG_YOURS_SECURITY_CHANGED, GetNameLink().c_str(), gm);
+        targetPlayer->PSendSysMessage(LANG_YOURS_SECURITY_CHANGED, GetNameLink().c_str(), gm);
         targetPlayer->GetSession()->SetSecurity(AccountTypes(gm));
     }
 
@@ -480,7 +480,7 @@ bool ChatHandler::HandleWarnCharacterCommand(char* args)
     sWorld.WarnAccount(playerData->uiAccount, authorName, reason, "WARN");
     sAccountMgr.WarnAccount(playerData->uiAccount, reason);
     if (pPlayer)
-        ChatHandler(pPlayer).PSendSysMessage(LANG_ACCOUNT_WARNED, reason);
+        pPlayer->PSendSysMessage(LANG_ACCOUNT_WARNED, reason);
 
     PSendSysMessage("Account #%u (character %s) has been warned for \"%s\"", playerData->uiAccount, playerData->sName.c_str(), reason);
     return true;
@@ -543,7 +543,7 @@ bool ChatHandler::HandleBanAllIPCommand(char* args)
 
     std::string ip = ipStr;
     LoginDatabase.escape_string(ip);
-    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `id` >= %u AND `last_ip` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), minId, ip.c_str());
+    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `id` >= %u AND `last_ip` LIKE CONCAT('%s','%%')", minId, ip.c_str());
     if (!result)
     {
         PSendSysMessage("No account found on IP '%s'", ip.c_str());
@@ -578,7 +578,7 @@ bool ChatHandler::HandleBanAllIPCommand(char* args)
         if (sAccountMgr.IsAccountBanned(it))
             continue;
         sWorld.BanAccount(BAN_ACCOUNT, accountsIdToName[it], 0, reason, m_session ? m_session->GetPlayerName() : "");
-        PSendSysMessage("Account '%s' permanently banned.", accountsIdToName[it].c_str(), reason);
+        PSendSysMessage("Account '%s' permanently banned. Reason: %s", accountsIdToName[it].c_str(), reason);
         ++bannedCount;
     }
     PSendSysMessage("%u accounts banned for %s (%u on this IP)", bannedCount, reason, accountsIdToName.size());
@@ -842,7 +842,7 @@ bool ChatHandler::HandleBanListCharacterCommand(char* args)
 
     std::string filter = cFilter;
     CharacterDatabase.escape_string(filter);
-    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `account` FROM `characters` WHERE `name` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), filter.c_str());
+    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `account` FROM `characters` WHERE `name` LIKE CONCAT('%s','%%')", filter.c_str());
     if (!result)
     {
         PSendSysMessage(LANG_BANLIST_NOCHARACTER);
@@ -870,7 +870,7 @@ bool ChatHandler::HandleBanListAccountCommand(char* args)
     else
     {
         result = LoginDatabase.PQuery("SELECT `account`.`id`, `username` FROM `account`, `account_banned`"
-                                      " WHERE `account`.`id` = `account_banned`.`id` AND `active` = 1 AND `username` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'") " GROUP BY `account`.`id`",
+                                      " WHERE `account`.`id` = `account_banned`.`id` AND `active` = 1 AND `username` LIKE CONCAT('%s','%%')" " GROUP BY `account`.`id`",
                                       filter.c_str());
     }
 
@@ -980,7 +980,7 @@ bool ChatHandler::HandleBanListIPCommand(char* args)
     else
     {
         result = LoginDatabase.PQuery("SELECT `ip`,`bandate`,`unbandate`,`bannedby`,`banreason` FROM `ip_banned`"
-                                      " WHERE (`bandate`=`unbandate` OR `unbandate`>UNIX_TIMESTAMP()) AND `ip` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'")
+                                      " WHERE (`bandate`=`unbandate` OR `unbandate`>UNIX_TIMESTAMP()) AND `ip` LIKE CONCAT('%s','%%')"
                                       " ORDER BY `unbandate`", filter.c_str());
     }
 
@@ -1147,8 +1147,8 @@ bool ChatHandler::HandleMuteCommand(char* args)
             pAura->SetAuraMaxDuration(notspeaktime * MINUTE * IN_MILLISECONDS);
             pAura->RefreshHolder();
         }
-            
-        ChatHandler(target).PSendSysMessage(LANG_YOUR_CHAT_DISABLED, notspeaktime);
+
+        target->PSendSysMessage(LANG_YOUR_CHAT_DISABLED, notspeaktime);
     }
 
     std::string nameLink = playerLink(target_name);
@@ -1206,8 +1206,8 @@ bool ChatHandler::HandleUnmuteCommand(char* args)
     if (target)
     {
         target->RemoveAurasDueToSpell(SPELL_PLAYER_MUTED_VISUAL);
-        ChatHandler(target).PSendSysMessage(LANG_YOUR_CHAT_ENABLED);
-    } 
+        target->PSendSysMessage(LANG_YOUR_CHAT_ENABLED);
+    }
 
     std::string nameLink = playerLink(target_name);
 

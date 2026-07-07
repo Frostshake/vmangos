@@ -21,6 +21,7 @@
 #include "ObjectMgr.h"
 #include "CreatureAI.h"
 #include "BattleGround.h"
+#include "Utilities/Random.h"
 
 void CreatureGroup::AddMember(ObjectGuid guid, float followDist, float followAngle, uint32 memberFlags)
 {
@@ -165,7 +166,7 @@ void CreatureGroup::OnRespawn(Creature* member)
     RespawnAll(member);
 }
 
-void CreatureGroup::RespawnAll(Creature* except)
+void CreatureGroup::RespawnAll(Creature const* except)
 {
     if (m_deleted)
         return;
@@ -217,7 +218,7 @@ void CreatureGroup::Respawn(Creature* member, CreatureGroupMember const* memberE
     m_respawnGuard = false;
 }
 
-void CreatureGroup::MemberAssist(Creature* member, Unit* target, Creature* alliedAttacker)
+void CreatureGroup::MemberAssist(Creature* member, Unit* target, Creature const* alliedAttacker)
 {
     if (m_assistGuard)
         return;
@@ -242,7 +243,7 @@ void CreatureGroup::MemberAssist(Creature* member, Unit* target, Creature* allie
     }
 }
 
-void CreatureGroup::RemoveTemporaryLeader(Creature* pLeader)
+void CreatureGroup::RemoveTemporaryLeader(Creature const* pLeader)
 {
     if (m_deleted)
         return;
@@ -378,7 +379,7 @@ uint32 CreatureGroup::ChooseCreatureId(ObjectGuid guid, CreatureData const* pDat
             if (nonSpawnedMembers.empty())
                 return itr.first;
 
-            uint32 otherSpawnsWithEntryCount = 0;
+            int32 otherSpawnsWithEntryCount = 0;
             for (auto const& memberGuid : nonSpawnedMembers)
             {
                 if (CreatureData const* pMemberData = sObjectMgr.GetCreatureData(memberGuid.GetCounter()))
@@ -487,7 +488,7 @@ void CreatureGroupsManager::Load()
             int32 maxCount = fields[3].GetInt32();
 
             if (maxCount <= 0)
-                maxCount = INT_MAX;
+                maxCount = std::numeric_limits<int32>::max();
             else if (minCount > maxCount)
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "CREATURE GROUPS: Min count %u is bigger than Max count %u for id %u in group with leader guid %u", minCount, maxCount, creatureId, fields[0].GetUInt32());
@@ -500,7 +501,7 @@ void CreatureGroupsManager::Load()
                     sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "CREATURE GROUPS: Bad creature id %u", creatureId);
                 continue;
             }
-            
+
             if (leaderGuid.IsEmpty())
             {
                 if (!sObjectMgr.IsExistingCreatureGuid(fields[0].GetUInt32()))
@@ -526,7 +527,7 @@ void CreatureGroupsManager::Load()
                     sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "CREATURE GROUPS: Bad leader guid %u", fields[0].GetUInt32());
                     continue;
                 }
-                
+
                 currentGroup->m_entryLimits[creatureId] = std::make_pair(minCount, maxCount);
             }
         } while (result->NextRow());

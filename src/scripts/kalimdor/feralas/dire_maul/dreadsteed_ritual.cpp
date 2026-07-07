@@ -4,7 +4,7 @@
 
 #include "scriptPCH.h"
 #include "dire_maul.h"
-#include "../../../custom/npc_j_eevee.h"
+#include "../../../world/npc_j_eevee.h"
 
 enum
 {
@@ -42,9 +42,8 @@ enum
     SPELL_BELL_AURA         = 23117,
     SPELL_CANDLE_AURA       = 23226,
 
-    SAY_HEL_NURATH          = -1780201,
-    SAY_IMP_DESPAWN         = -1780202,
-    SAY_DREAD_GUARD_DESPAWN = -1780203
+    SAY_HEL_NURATH          = 9727,
+    SAY_DEMON_DESPAWN       = 9768
 };
 
 struct EventLocations
@@ -182,14 +181,14 @@ struct go_pedestal_of_immol_tharAI: public GameObjectAI
         for (const auto& it : lCrea)
         {
             if (it->IsAlive())
-                DoScriptText(SAY_IMP_DESPAWN, it);
+                DoScriptText(SAY_DEMON_DESPAWN, it);
             it->DisappearAndDie();
         }
         me->GetCreatureListWithEntryInGrid(lCrea, NPC_DREAD_GUARD, 30.0f);
         for (const auto& it : lCrea)
         {
             if (it->IsAlive())
-                DoScriptText(SAY_DREAD_GUARD_DESPAWN, it);
+                DoScriptText(SAY_DEMON_DESPAWN, it);
             it->DisappearAndDie();
         }
     }
@@ -229,14 +228,14 @@ struct go_pedestal_of_immol_tharAI: public GameObjectAI
         for (const auto& it : lCrea)
         {
             if (it->IsAlive())
-                DoScriptText(SAY_IMP_DESPAWN, it);
+                DoScriptText(SAY_DEMON_DESPAWN, it);
             it->DisappearAndDie();
         }
         me->GetCreatureListWithEntryInGrid(lCrea, NPC_DREAD_GUARD, 30.0f);
         for (const auto& it : lCrea)
         {
             if (it->IsAlive())
-                DoScriptText(SAY_DREAD_GUARD_DESPAWN, it);
+                DoScriptText(SAY_DEMON_DESPAWN, it);
             it->DisappearAndDie();
         }
         reset();
@@ -809,7 +808,7 @@ enum
     //spells are absolutely certain.
     SPELL_BERSERKER_CHARGE          = 16636, //OK
     SPELL_FLAME_BUFFET              = 22713, //OK
-    SPELL_SUMMON_DREADSTEED_SPIRIT  = 23159, //marche en étant mort?
+    SPELL_SUMMON_DREADSTEED_SPIRIT  = 23159, //works while dead?
     SPELL_SHADOW_WORD               = 17146, //OK
     SPELL_VEIL_OF_SHADOW            = 23224, //OK
     SPELL_SLEEP                     = 20989, //OK
@@ -841,7 +840,7 @@ struct boss_lordHelNurathAI : public ScriptedAI
             return;
         if (m_uiShadowWord_Timer < uiDiff)
         {
-            //penser à vérifier qu'il change de target si la cible est sleep
+            // remember to check that it changes target if the target is asleep
             if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_SHADOW_WORD) == CAST_OK)
                 m_uiShadowWord_Timer = urand(10000, 30000);
         }
@@ -899,7 +898,7 @@ struct boss_xorothianDreadsteedAI : public ScriptedAI
             return;
         if (m_uiCharge_Timer < uiDiff)
         {
-            //penser à vérifier qu'il change de target si la cible est sleep
+            // remember to check that it changes target if the target is asleep
             if (DoCastSpellIfCan(m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0), SPELL_BERSERKER_CHARGE) == CAST_OK)
                 m_uiCharge_Timer = urand(10000, 18000);
         }

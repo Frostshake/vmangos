@@ -89,11 +89,11 @@ enum BagFamily
     BAG_FAMILY_ARROWS                           = 1,
     BAG_FAMILY_BULLETS                          = 2,
     BAG_FAMILY_SOUL_SHARDS                      = 3,
-    BAG_FAMILY_UNKNOWN1                         = 4,
-    BAG_FAMILY_UNKNOWN2                         = 5,
+  //BAG_FAMILY_LEATHERWORKING_SUPPLIES          = 4, // added in tbc
+  //BAG_FAMILY_INSCRIPTION_SUPPLIES             = 5, // added in wotlk
     BAG_FAMILY_HERBS                            = 6,
-    BAG_FAMILY_ENCHANTING_SUPP                  = 7,
-    BAG_FAMILY_ENGINEERING_SUPP                 = 8,
+    BAG_FAMILY_ENCHANTING_SUPPLIES              = 7,
+    BAG_FAMILY_ENGINEERING_SUPPLIES             = 8,
     BAG_FAMILY_KEYS                             = 9,
 };
 
@@ -396,8 +396,7 @@ enum ItemExtraFlags
     ITEM_EXTRA_MAIL_STATIONERY     = 0x01,      // Used as icon or background for mails
     ITEM_EXTRA_IGNORE_QUEST_STATUS = 0x02,      // No quest status will be checked when this item drops
     ITEM_EXTRA_NOT_OBTAINABLE      = 0x04,      // Never obtainable by players in vanilla
-    ITEM_EXTRA_CAST_AS_TRIGGERED   = 0x08,      // Spell assigned on item is cast as triggered (no cast time)
-    ITEM_EXTRA_ALL                 = 0x0F       // All used flags, used to check DB data (mask all above flags)
+    ITEM_EXTRA_ALL                 = 0x07       // All used flags, used to check DB data (mask all above flags)
 };
 
 // GCC have alternative #pragma pack(N) syntax and old gcc version not support pack(push,N), also any gcc version not support it at some platform

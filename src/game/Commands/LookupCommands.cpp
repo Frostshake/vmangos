@@ -42,7 +42,7 @@ bool ChatHandler::HandleListObjectCommand(char* args)
         return false;
     }
 
-    GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(go_id);
+    GameObjectInfo const* gInfo = sObjectMgr.GetGameObjectTemplate(go_id);
     if (!gInfo)
     {
         PSendSysMessage(LANG_COMMAND_LISTOBJINVALIDID, go_id);
@@ -85,9 +85,9 @@ bool ChatHandler::HandleListObjectCommand(char* args)
             int mapid = fields[4].GetUInt16();
 
             if (m_session)
-                PSendSysMessage(LANG_GO_LIST_CHAT, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), guid, gInfo->name, x, y, z, mapid);
+                PSendSysMessage(LANG_GO_LIST_CHAT, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), guid, gInfo->name.c_str(), x, y, z, mapid);
             else
-                PSendSysMessage(LANG_GO_LIST_CONSOLE, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), gInfo->name, x, y, z, mapid);
+                PSendSysMessage(LANG_GO_LIST_CONSOLE, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), gInfo->name.c_str(), x, y, z, mapid);
         }
         while (result->NextRow());
     }
@@ -735,7 +735,7 @@ bool ChatHandler::HandleLookupCreatureModelCommand(char* args)
             for (uint32 id : cInfo->display_id)
             {
                 if (id)
-                { 
+                {
                     if (CreatureDisplayInfoEntry const* displayInfo = sCreatureDisplayInfoStore.LookupEntry(id))
                     {
                         if (displayInfo->ModelId)
@@ -803,12 +803,13 @@ bool ChatHandler::HandleLookupObjectCommand(char* args)
 
     uint32 counter = 0;
 
-    for (auto itr = sGOStorage.begin<GameObjectInfo>(); itr < sGOStorage.end<GameObjectInfo>(); ++itr)
+    for (auto const& itr : sObjectMgr.GetGameObjectInfoMap())
     {
+        auto const& goInfo = itr.second;
         int loc_idx = GetSessionDbLocaleIndex();
         if (loc_idx >= 0)
         {
-            GameObjectLocale const* gl = sObjectMgr.GetGameObjectLocale(itr->id);
+            GameObjectLocale const* gl = sObjectMgr.GetGameObjectLocale(goInfo->id);
             if (gl)
             {
                 if ((int32)gl->Name.size() > loc_idx && !gl->Name[loc_idx].empty())
@@ -818,9 +819,9 @@ bool ChatHandler::HandleLookupObjectCommand(char* args)
                     if (Utf8FitTo(name, wnamepart))
                     {
                         if (m_session)
-                            PSendSysMessage(LANG_GO_ENTRY_LIST_CHAT, itr->id, itr->id, name.c_str());
+                            PSendSysMessage(LANG_GO_ENTRY_LIST_CHAT, goInfo->id, goInfo->id, name.c_str());
                         else
-                            PSendSysMessage(LANG_GO_ENTRY_LIST_CONSOLE, itr->id, name.c_str());
+                            PSendSysMessage(LANG_GO_ENTRY_LIST_CONSOLE, goInfo->id, name.c_str());
                         ++counter;
                         continue;
                     }
@@ -828,16 +829,16 @@ bool ChatHandler::HandleLookupObjectCommand(char* args)
             }
         }
 
-        std::string name = itr->name;
+        std::string name = goInfo->name;
         if (name.empty())
             continue;
 
         if (Utf8FitTo(name, wnamepart))
         {
             if (m_session)
-                PSendSysMessage(LANG_GO_ENTRY_LIST_CHAT, itr->id, itr->id, name.c_str());
+                PSendSysMessage(LANG_GO_ENTRY_LIST_CHAT, goInfo->id, goInfo->id, name.c_str());
             else
-                PSendSysMessage(LANG_GO_ENTRY_LIST_CONSOLE, itr->id, name.c_str());
+                PSendSysMessage(LANG_GO_ENTRY_LIST_CONSOLE, goInfo->id, name.c_str());
             ++counter;
         }
     }
@@ -927,7 +928,7 @@ bool ChatHandler::HandleLookupAccountEmailCommand(char* args)
     // No wildcard in front, cannot use table index
     LoginDatabase.AsyncPQuery(AccountSearchHandler::HandleAccountLookupResult, GetAccountId(), limit,
         //      0      1           2         3        4
-        "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `email` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'") " LIMIT %u",
+        "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `email` LIKE CONCAT('%s','%%')" " LIMIT %u",
         email.c_str(), limit);
 
     return true;
@@ -947,8 +948,8 @@ bool ChatHandler::ShowAccountIpListHelper(char* args, bool onlineonly)
     LoginDatabase.escape_string(ip);
 
     char const* query = onlineonly
-        ? "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `online` = 1 AND `last_ip` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'") " LIMIT %u"
-        : "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE                  `last_ip` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'") " LIMIT %u";
+        ? "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `online` = 1 AND `last_ip` LIKE CONCAT('%s','%%')" " LIMIT %u"
+        : "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE                  `last_ip` LIKE CONCAT('%s','%%')" " LIMIT %u";
 
     LoginDatabase.AsyncPQuery(AccountSearchHandler::HandleAccountLookupResult, GetAccountId(), limit, query, ip.c_str(), limit);
 
@@ -983,7 +984,7 @@ bool ChatHandler::HandleLookupAccountNameCommand(char* args)
 
     LoginDatabase.AsyncPQuery(AccountSearchHandler::HandleAccountLookupResult, GetAccountId(), limit,
         //       0     1           2         3   4
-        "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `username` " _LIKE_ " " _CONCAT3_("'%%'", "'%s'", "'%%'") " LIMIT %u",
+        "SELECT `id`, `username`, `last_ip`, 0, `expansion` FROM `account` WHERE `username` LIKE CONCAT('%%','%s','%%')" " LIMIT %u",
         account.c_str(), limit);
 
     return true;
@@ -1002,7 +1003,7 @@ bool ChatHandler::HandleLookupPlayerIpCommand(char* args)
     std::unique_ptr<QueryResult> result = nullptr;
     std::string ip = ipStr;
     LoginDatabase.escape_string(ip);
-    result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `last_ip` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), ip.c_str());
+    result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `last_ip` LIKE CONCAT('%s','%%')", ip.c_str());
 
     return LookupPlayerSearchCommand(std::move(result), &limit);
 }
@@ -1023,7 +1024,7 @@ bool ChatHandler::HandleLookupPlayerAccountCommand(char* args)
 
     LoginDatabase.escape_string(account);
 
-    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `username` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), account.c_str());
+    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `username` LIKE CONCAT('%s','%%')", account.c_str());
 
     return LookupPlayerSearchCommand(std::move(result), &limit);
 }
@@ -1041,7 +1042,7 @@ bool ChatHandler::HandleLookupPlayerEmailCommand(char* args)
     std::string email = emailStr;
     LoginDatabase.escape_string(email);
 
-    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `email` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), email.c_str());
+    std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` WHERE `email` LIKE CONCAT('%s','%%')", email.c_str());
 
     return LookupPlayerSearchCommand(std::move(result), &limit);
 }
@@ -1062,7 +1063,7 @@ bool ChatHandler::HandleLookupPlayerNameCommand(char* args)
 
     CharacterDatabase.AsyncPQuery(&PlayerSearchHandler::HandlePlayerCharacterLookupResult,
         GetAccountId(), limit_original,
-        "SELECT `guid`, `name`, `race`, `class`, `level` FROM `characters` WHERE `name` " _LIKE_ " " _CONCAT3_("'%%'", "'%s'", "'%%'"),
+        "SELECT `guid`, `name`, `race`, `class`, `level` FROM `characters` WHERE `name` LIKE CONCAT('%%','%s','%%')",
         name.c_str());
 
     return true;

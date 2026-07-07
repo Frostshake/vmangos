@@ -28,7 +28,7 @@
 #include "SpellClassMask.h"
 
 #include <map>
-#include <set>
+#include <unordered_set>
 #include <vector>
 #include <array>
 
@@ -40,20 +40,6 @@
 #else
 #pragma pack(push,1)
 #endif
-
-struct AreaTriggerEntry
-{
-    uint32    id;                                           // 0
-    uint32    mapid;                                        // 1
-    float     x;                                            // 2
-    float     y;                                            // 3
-    float     z;                                            // 4
-    float     radius;                                       // 5
-    float     box_x;                                        // 6 extent x edge
-    float     box_y;                                        // 7 extent y edge
-    float     box_z;                                        // 8 extent z edge
-    float     box_orientation;                              // 9 extent rotation by about z axis
-};
 
 struct AuctionHouseEntry
 {
@@ -399,6 +385,11 @@ struct FactionTemplateEntry
         }
         return (hostileMask & entry.ourMask) != 0;
     }
+    bool IsHostileToPlayerTeam(FactionTemplateEntry const& entry) const
+    {
+        return ((hostileMask & entry.ourMask) & (FACTION_MASK_ALLIANCE | FACTION_MASK_HORDE)) != 0 ||
+               ((ourMask & entry.hostileMask) & (FACTION_MASK_ALLIANCE | FACTION_MASK_HORDE)) != 0;
+    }
     bool IsHostileToPlayers() const { return (hostileMask & FACTION_MASK_PLAYER) !=0; }
     bool IsNeutralToAll() const
     {
@@ -694,18 +685,6 @@ struct TalentTabEntry
     //char* internalname;                                   // 14       m_backgroundFile
 };
 
-struct TaxiNodesEntry
-{
-    uint32    ID;                                           // 0        m_ID
-    uint32    map_id;                                       // 1        m_ContinentID
-    float     x;                                            // 2        m_x
-    float     y;                                            // 3        m_y
-    float     z;                                            // 4        m_z
-    std::array<std::string, MAX_DBC_LOCALE> name{};         // 5-12     m_Name_lang
-                                                            // 13 string flags
-    uint32    MountCreatureID[2];                           // 14-15    m_MountCreatureID[2] horde[14]-alliance[15]
-};
-
 struct TaxiPathEntry
 {
     uint32    ID;
@@ -805,11 +784,24 @@ struct WorldSafeLocsEntry
 #else
 #pragma pack(pop)
 #endif
+// ^^^ Data packed area above this line. Only use primitive data types. ^^^
 
-typedef std::set<uint32> SpellCategorySet;
-typedef std::map<uint32,SpellCategorySet > SpellCategoriesStore;
-typedef std::set<uint32> PetFamilySpellsSet;
-typedef std::map<uint32,PetFamilySpellsSet > PetFamilySpellsStore;
+struct TaxiNodesEntry
+{
+    uint32    ID;                                           // 0        m_ID
+    uint32    map_id;                                       // 1        m_ContinentID
+    float     x;                                            // 2        m_x
+    float     y;                                            // 3        m_y
+    float     z;                                            // 4        m_z
+    std::array<std::string, MAX_DBC_LOCALE> name{};         // 5-12     m_Name_lang
+    // 13 string flags
+    uint32    MountCreatureID[2];                           // 14-15    m_MountCreatureID[2] horde[14]-alliance[15]
+};
+
+typedef std::unordered_set<uint32> SpellCategorySet;
+typedef std::unordered_map<uint32,SpellCategorySet > SpellCategoriesStore;
+typedef std::unordered_set<uint32> PetFamilySpellsSet;
+typedef std::unordered_map<uint32,PetFamilySpellsSet > PetFamilySpellsStore;
 
 // Structures not used for casting to loaded DBC data and not required then packing
 struct TalentSpellPos
@@ -848,5 +840,6 @@ typedef Path<TaxiPathNodePtr,TaxiPathNodeEntry const> TaxiPathNodeList;
 typedef std::vector<TaxiPathNodeList> TaxiPathNodesByPath;
 
 #define TaxiMaskSize 8
+// TODO: Use custom struct which has std::bitset inside it
 typedef uint32 TaxiMask[TaxiMaskSize];
 #endif

@@ -34,7 +34,7 @@
 #include "Utilities/TypeList.h"
 #include "vmap/DynamicTree.h"
 #include "MoveSplineInitArgs.h"
-#include "WorldSession.h"
+#include "PacketProcessing.h"
 #include "SQLStorages.h"
 #include "ScriptCommands.h"
 #include "CreatureLinkingMgr.h"
@@ -47,6 +47,7 @@
 
 using Movement::Vector3;
 
+struct AreaTriggerEntry;
 struct CreatureInfo;
 class Creature;
 class Unit;
@@ -57,12 +58,13 @@ class MapPersistentState;
 class WorldPersistentState;
 class DungeonPersistentState;
 class BattleGroundPersistentState;
+class ServerPacket;
 class ChatHandler;
 class BattleGround;
 class WeatherSystem;
 class GenericTransport;
 class ElevatorTransport;
-class Transport;
+class ShipTransport;
 
 namespace VMAP
 {
@@ -99,7 +101,7 @@ struct MapEntry
     bool IsContinent() const { return id == 0 || id == 1; }
 };
 
-typedef std::map<uint32, uint32> AreaFlagByMapId;
+typedef std::unordered_map<uint32, uint32> AreaFlagByMapId;
 static AreaFlagByMapId sAreaFlagByMapId;
 
 struct AreaEntry
@@ -190,7 +192,7 @@ enum TeleportLocation
 
 typedef bool(Map::*ScriptCommandFunction) (ScriptInfo const& script, WorldObject* source, WorldObject* target);
 
-// Additional target part of a ScriptedEvent. 
+// Additional target part of a ScriptedEvent.
 struct ScriptedEventTarget
 {
     ScriptedEventTarget(ObjectGuid object, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript) :
@@ -216,7 +218,7 @@ struct ScriptedEvent
 {
     ScriptedEvent(uint32 eventId, ObjectGuid source, ObjectGuid target, Map& map, time_t expireTime, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript) :
         m_Source(source), m_Target(target), m_Map(map), m_uiEventId(eventId), m_tExpireTime(expireTime), m_bEnded(false), m_uiFailureCondition(failureCondition), m_uiFailureScript(failureScript), m_uiSuccessCondition(successCondition), m_uiSuccessScript(successScript) {}
-    
+
     ObjectGuid m_Source;
     ObjectGuid m_Target;
     Map& m_Map;
@@ -230,7 +232,7 @@ struct ScriptedEvent
     uint32 m_uiSuccessCondition;
     uint32 m_uiSuccessScript;
 
-    std::map<uint32, uint32> m_mData;
+    std::unordered_map<uint32, uint32> m_mData;
     std::vector<ScriptedEventTarget> m_vTargets;
 
     // Returns true when event has expired.
@@ -244,7 +246,7 @@ struct ScriptedEvent
 
     void SendEventToAllTargets(uint32 uiData);
 
-    void SetSourceObject(WorldObject* pSource)
+    void SetSourceObject(WorldObject const* pSource)
     {
         if (pSource && pSource->IsInWorld() && (pSource->GetMap() == &m_Map))
         {
@@ -252,7 +254,7 @@ struct ScriptedEvent
         }
     }
 
-    void SetTargetObject(WorldObject* pTarget)
+    void SetTargetObject(WorldObject const* pTarget)
     {
         if (pTarget && pTarget->IsInWorld() && (pTarget->GetMap() == &m_Map))
         {
@@ -260,7 +262,7 @@ struct ScriptedEvent
         }
     }
 
-    void AddOrUpdateExtraTarget(WorldObject* pObject, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript)
+    void AddOrUpdateExtraTarget(WorldObject const* pObject, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript)
     {
         if (!pObject || !pObject->IsInWorld() || (pObject->GetMap() != &m_Map))
             return;
@@ -437,7 +439,7 @@ class Map : public GridRefManager<NGridType>
 
         void UpdateActiveObjectVisibility(Player* player);
         void UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGuids);
-        void UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGuids, UpdateData& data, std::set<WorldObject*>& visibleNow);
+        void UpdateActiveObjectVisibility(Player* player, ObjectGuidSet& visibleGuids, UpdateData& data);
 
         void resetMarkedCells() { marked_cells.reset(); }
         bool isCellMarked(uint32 pCellId) { return marked_cells.test(pCellId); }
@@ -449,6 +451,7 @@ class Map : public GridRefManager<NGridType>
         bool ActiveObjectsNearGrid(uint32 x,uint32 y) const;
 
         // Send a Packet to all players in the map
+        void SendToPlayers(std::unique_ptr<ServerPacket const> packet, Team team = TEAM_NONE) const;
         void SendToPlayers(WorldPacket const* data, Team team = TEAM_NONE) const;
         void SendDefenseMessage(int32 textId, uint32 zoneId) const;
         void SendMonsterTextToMap(int32 textId, Language language, ChatMsg chatMsg, uint32 creatureId, WorldObject const* pSource = nullptr, Unit const* pTarget = nullptr);
@@ -456,7 +459,7 @@ class Map : public GridRefManager<NGridType>
         // Send a Packet to all players in a zone
         bool SendToPlayersInZone(WorldPacket const* data, uint32 zoneId) const; // return false if no player found
         void PlayDirectSoundToMap(uint32 soundId, uint32 zoneId = 0) const;
-        
+
         typedef MapRefManager PlayerList;
         PlayerList const& GetPlayers() const { return m_mapRefManager; }
 
@@ -486,6 +489,8 @@ class Map : public GridRefManager<NGridType>
         bool ScriptCommandStartDirect(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         // Removes all parts of script from the queue.
         void TerminateScript(ScriptAction const& step);
+        // Checks cooldown and starts script from areatrigger_scripts table.
+        void StartAreaTriggerScript(AreaTriggerEntry const* pTrigger, Player* pPlayer);
 
         // must called with AddToWorld
         void AddToActive(WorldObject* obj);
@@ -549,14 +554,14 @@ class Map : public GridRefManager<NGridType>
         InstanceData* GetInstanceData() { return m_data; }
         InstanceData const* GetInstanceData() const { return m_data; }
         uint32 GetScriptId() const { return m_scriptId; }
-        
+
         // GameObjectCollision
         float GetHeight(float x, float y, float z, bool vmap = true, float maxSearchDist = DEFAULT_HEIGHT_SEARCH) const;
         bool isInLineOfSight(float x1, float y1, float z1, float x2, float y2, float z2, bool checkDynLos = true, bool ignoreM2Model = true) const;
         // First collision with object
         bool GetLosHitPosition(float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ, float modifyDist) const;
         // Use navemesh to walk
-        bool GetWalkHitPosition(GenericTransport* t, float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ, 
+        bool GetWalkHitPosition(GenericTransport* t, float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ,
             uint32 moveAllowedFlags = 0xF /*NAV_GROUND | NAV_WATER | NAV_MAGMA | NAV_SLIME*/, float zSearchDist = 20.0f, bool locatedOnSteepSlope = true) const;
         bool GetWalkRandomPosition(GenericTransport* t, float &x, float &y, float &z, float maxRadius, uint32 moveAllowedFlags = 0xF) const;
         bool GetSwimRandomPosition(float& x, float& y, float& z, float radius, GridMapLiquidData& liquid_status, bool randomRange = true) const;
@@ -564,9 +569,9 @@ class Map : public GridRefManager<NGridType>
         GameObjectModel const* FindDynamicObjectCollisionModel(float x1, float y1, float z1, float x2, float y2, float z2);
 
         void Balance() { m_dynamicTree.balance(); }
-        void RemoveGameObjectModel(const GameObjectModel& model);
-        void InsertGameObjectModel(const GameObjectModel& model);
-        bool ContainsGameObjectModel(const GameObjectModel& model) const;
+        void RemoveGameObjectModel(GameObjectModel const& model);
+        void InsertGameObjectModel(GameObjectModel const& model);
+        bool ContainsGameObjectModel(GameObjectModel const& model) const;
         bool GetDynamicObjectHitPos(Vector3 start, Vector3 end, Vector3& out, float finalDistMod) const;
         float GetDynamicTreeHeight(float x, float y, float z, float maxSearchDist) const;
         bool CheckDynamicTreeLoS(float x1, float y1, float z1, float x2, float y2, float z2, bool ignoreM2Model) const;
@@ -721,6 +726,7 @@ class Map : public GridRefManager<NGridType>
         typedef std::multimap<time_t, ScriptAction> ScriptScheduleMap;
         mutable MapMutexType      m_scriptSchedule_lock;
         ScriptScheduleMap m_scriptSchedule;
+        std::unordered_map<uint32, time_t> m_areaTriggerCooldowns;
 
         InstanceData* m_data = nullptr;
         uint32 m_scriptId = 0;
@@ -807,7 +813,7 @@ class Map : public GridRefManager<NGridType>
         bool ScriptCommand_SetData64(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_StartScript(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_RemoveItem(ScriptInfo const& script, WorldObject* source, WorldObject* target);
-        bool ScriptCommand_RemoveGameObject(ScriptInfo const& script, WorldObject* source, WorldObject* target);
+        bool ScriptCommand_RemoveObject(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_SetMeleeAttack(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_SetCombatMovement(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_SetPhase(ScriptInfo const& script, WorldObject* source, WorldObject* target);
@@ -904,7 +910,7 @@ class Map : public GridRefManager<NGridType>
             &Map::ScriptCommand_SetData64,              // 38
             &Map::ScriptCommand_StartScript,            // 39
             &Map::ScriptCommand_RemoveItem,             // 40
-            &Map::ScriptCommand_RemoveGameObject,       // 41
+            &Map::ScriptCommand_RemoveObject,           // 41
             &Map::ScriptCommand_SetMeleeAttack,         // 42
             &Map::ScriptCommand_SetCombatMovement,      // 43
             &Map::ScriptCommand_SetPhase,               // 44
